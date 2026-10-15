@@ -57,7 +57,7 @@ if pilihan == "1. Input Kategori & Simulasi Kredit":
     with col_input1:
         dp_input = str.number_input(f"Input Uang Muka / DP (Minimal: Rp {dp_minimal:,.2f})", min_value=float(dp_minimal), value=float(dp_minimal), step=10000.0)
     with col_input2:
-        tenor_pilihan = str.selectbox("Pilih Tenor Cicilan (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
+        tenor_pilihan = str.selectbox("Pilih Tenor Cicilan (Bulan)", [1, 2, 3, 6, 12, 24], index=3)
     
     rate_bunga_per_bulan = 0.40 / 6
     persen_bunga_custom = rate_bunga_per_bulan * tenor_pilihan
@@ -126,7 +126,7 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
         with col_t1:
             dp_transaksi = str.number_input(f"Besar DP yang Dibayar Cust (Min: Rp {dp_min_transaksi:,.0f})", min_value=float(dp_min_transaksi), value=float(dp_min_transaksi), step=10000.0)
         with col_t2:
-            tenor_transaksi = str.selectbox("Pilih Jangka Waktu Tenor (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
+            tenor_transaksi = str.selectbox("Pilih Jangka Waktu Tenor (Bulan)", [1, 2, 3, 6, 12, 24], index=3)
             
         rate_bunga_per_bulan = 0.40 / 6
         bunga_final = rate_bunga_per_bulan * tenor_transaksi
@@ -171,7 +171,7 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
             """
             str.components.v1.html(nota_html + "<script>window.print();</script>", height=380)
 
-# --- FITUR LAINNYA 4-7 ---
+# --- FEATURE 4: DATA CUSTOMER ---
 elif pilihan == "4. Data Customer":
     str.header("👥 Data Pelanggan")
     with str.form("Form Customer"):
@@ -185,8 +185,9 @@ elif pilihan == "4. Data Customer":
             str.success("Data customer berhasil disimpan!")
     str.dataframe(pd.read_sql_query("SELECT * FROM customer", conn), use_container_width=True)
 
+# --- FEATURE 5: STOK ---
 elif pilihan == "5. Stok Barang":
     str.header("📦 Real-time Stok Gudang")
     str.dataframe(pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok FROM produk", conn), use_container_width=True)
 
-elif pilihan == "6. Overdue & 7. Alert Kelayakan":
+# --- FEATURE 6 & 7: OVERDUE & ALERT KELAYAKAN ---
