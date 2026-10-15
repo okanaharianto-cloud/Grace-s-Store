@@ -43,7 +43,7 @@ menu = [
 ]
 pilihan = str.sidebar.selectbox("Menu Navigasi", menu)
 
-# --- FEATURE 1: INPUT KATEGORI & KALKULATOR FLEKSIBEL ---
+# --- FEATURE 1 ---
 if pilihan == "1. Input Kategori & Skema Kredit":
     str.header("🧮 Input Produk & Kalkulator Simulasi Fleksibel")
     nama_produk = str.text_input("Nama Barang")
@@ -56,7 +56,6 @@ if pilihan == "1. Input Kategori & Skema Kredit":
     
     str.markdown("---")
     str.subheader("⚙️ Parameter Kredit Fleksibel (DP & Tenor)")
-    
     col_input1, col_input2 = str.columns(2)
     with col_input1:
         dp_input = str.number_input(f"Uang Muka / DP (Bisa diisi lebih besar. Minimal: Rp {dp_minimal:,.2f})", min_value=float(dp_minimal), value=float(dp_minimal), step=50000.0)
@@ -65,7 +64,6 @@ if pilihan == "1. Input Kategori & Skema Kredit":
     
     rate_bunga_per_bulan = 0.40 / 6
     persen_bunga_custom = rate_bunga_per_bulan * tenor_pilihan
-    
     pokok_hutang = round(harga_cash - dp_input, -2)
     total_hutang = round(pokok_hutang * (1 + persen_bunga_custom), -2)
     cicilan_per_bulan = round(total_hutang / tenor_pilihan, -2)
@@ -87,7 +85,7 @@ if pilihan == "1. Input Kategori & Skema Kredit":
         else:
             str.warning("Nama barang wajib diisi.")
 
-# --- FEATURE 2: INPUT IN ---
+# --- FEATURE 2 ---
 elif pilihan == "2. Input Barang Masuk (In)":
     str.header("📥 Input Barang Masuk (Restock)")
     df_produk = pd.read_sql_query("SELECT id, nama FROM produk", conn)
@@ -104,7 +102,7 @@ elif pilihan == "2. Input Barang Masuk (In)":
     else:
         str.info("Belum ada produk terdaftar.")
 
-# --- FEATURE 3: INPUT OUT ---
+# --- FEATURE 3 ---
 elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
     str.header("📤 Transaksi Keluar (Pengajuan Kredit Baru)")
     df_cust = pd.read_sql_query("SELECT id, nama FROM customer", conn)
@@ -143,7 +141,7 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
             conn.commit()
             str.success(f"Akad Kredit Fleksibel Sukses! Cetak nota Anda sekarang di Menu 9.")
 
-# --- FEATURE 4: CUSTOMER ---
+# --- FEATURE 4 ---
 elif pilihan == "4. Data Customer":
     str.header("👥 Data Pelanggan")
     with str.form("Form Customer"):
@@ -157,12 +155,12 @@ elif pilihan == "4. Data Customer":
             str.success("Data customer berhasil disimpan!")
     str.dataframe(pd.read_sql_query("SELECT * FROM customer", conn), use_container_width=True)
 
-# --- FEATURE 5: STOK ---
+# --- FEATURE 5 ---
 elif pilihan == "5. Stok Barang":
     str.header("📦 Real-time Stok Gudang")
     str.dataframe(pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok FROM produk", conn), use_container_width=True)
 
-# --- FEATURE 6: OVERDUE ---
+# --- FEATURE 6 ---
 elif pilihan == "6. Overdue":
     str.header("🚨 Data Pelanggan Telat Bayar (Overdue)")
     tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
@@ -173,7 +171,7 @@ elif pilihan == "6. Overdue":
     else:
         str.success("✅ Tidak ada akun yang overdue hari ini.")
 
-# --- FEATURE 7: ALERT KELAYAKAN ---
+# --- FEATURE 7 ---
 elif pilihan == "7. Alert Kelayakan":
     str.header("🔔 Peringatan Alert Keterlambatan Real-time")
     tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
@@ -185,6 +183,8 @@ elif pilihan == "7. Alert Kelayakan":
     else:
         str.success("✅ Status Kelayakan Kredit Toko Aman Terkendali.")
 
-# --- FEATURE 8: REKAPAN ---
+# --- FEATURE 8 ---
 elif pilihan == "8. Rekapan Database":
     str.header("📊 Rekapan Isi Database")
+    tabel_pilihan = str.selectbox("Pilih Tabel Data", ["produk", "customer", "kredit"])
+    df_rekapan = pd.read_sql_query(f"SELECT * FROM {tabel_pilihan}", conn)
