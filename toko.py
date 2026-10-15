@@ -193,13 +193,13 @@ str.dataframe(pd.read_sql_query("SELECT * FROM customer", conn), use_container_w
 
 --- FEATURE 5: STOK REALTIME ---
 
-elif pilihan == "5. Stok Barang":
+ if pilihan == "5. Stok Barang":
 str.header("📦 Real-time Stok Gudang")
 str.dataframe(pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok FROM produk", conn), use_container_width=True)
 
 --- FEATURE 6: OVERDUE ---
 
-elif pilihan == "6. Overdue":
+if pilihan == "6. Overdue":
 str.header("🚨 Data Pelanggan Telat Bayar (Overdue)")
 tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
 query_overdue = '''SELECT kredit.id, customer.nama, customer.telepon, kredit.total_hutang, kredit.tenor, kredit.cicilan_bulan, kredit.jatuh_tempo FROM kredit JOIN customer ON kredit.customer_id = customer.id WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?'''
@@ -211,7 +211,7 @@ str.success("✅ Tidak ada akun yang overdue hari ini.")
 
 --- FEATURE 7: ALERT KELAYAKAN ---
 
-elif pilihan == "7. Alert Kelayakan":
+if pilihan == "7. Alert Kelayakan":
 str.header("🔔 Peringatan Alert Keterlambatan Real-time")
 tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
 query_overdue = '''SELECT customer.nama, customer.telepon, kredit.cicilan_bulan, kredit.tenor, kredit.jatuh_tempo FROM kredit JOIN customer ON kredit.customer_id = customer.id WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?'''
