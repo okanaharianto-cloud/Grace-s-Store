@@ -135,6 +135,29 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
             c.execute("UPDATE produk SET stok = stok - 1 WHERE id = ?", (id_p,))
             conn.commit()
             str.success(f"Akad Kredit Sukses dengan tenor {tenor_transaksi} Bulan.")
+            
+            str.markdown("### 🖨️ NOTA TRANSAKSI KASIR")
+            nota_html = f"""
+            <div style="padding:15px; background-color:#ffffff; color:#000000; font-family:monospace; border:1px dashed #000; width:350px;">
+                <h4 style="text-align:center;margin:0;">GRACE'S STORE</h4>
+                <p style="text-align:center;margin:0;font-size:12px;">Nota Kredit Pembiayaan</p>
+                <hr style="border-top:1px dashed #000;">
+                <p style="margin:4px 0;">Tanggal : {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+                <p style="margin:4px 0;">Customer: {pilih_c}</p>
+                <p style="margin:4px 0;">Barang  : {pilih_p}</p>
+                <hr style="border-top:1px dashed #000;">
+                <table style="width:100%; font-size:13px;">
+                    <tr><td>Harga Cash</td><td style="text-align:right;">Rp {h_cash:,.0f}</td></tr>
+                    <tr><td>DP Masuk</td><td style="text-align:right;">- Rp {dp_transaksi:,.0f}</td></tr>
+                    <tr style="font-weight:bold;"><td>Pokok Hutang</td><td style="text-align:right;">Rp {p_hut:,.0f}</td></tr>
+                    <tr><td>Tenor Kredit</td><td style="text-align:right;">{tenor_transaksi} Bulan</td></tr>
+                    <tr style="font-weight:bold;"><td>Angsuran/Bln</td><td style="text-align:right;">Rp {c_bul:,.0f}</td></tr>
+                </table>
+                <hr style="border-top:1px dashed #000;">
+                <p style="text-align:center;font-size:12px;margin:0;">Terima Kasih Atas Kepercayaan Anda</p>
+            </div>
+            """
+            str.components.v1.html(nota_html + "<script>window.print();</script>", height=380)
 
 # --- FEATURE 4 ---
 elif pilihan == "4. Data Customer":
@@ -159,32 +182,3 @@ elif pilihan == "5. Stok Barang":
 elif pilihan == "6. Overdue & 7. Alert Kelayakan":
     str.header("🚨 Peringatan Keterlambatan Bayar (Overdue)")
     tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
-    query_overdue = '''SELECT kredit.id, customer.nama, customer.telepon, kredit.total_hutang, kredit.tenor, kredit.cicilan_bulan, kredit.jatuh_tempo FROM kredit JOIN customer ON kredit.customer_id = customer.id WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?'''
-    df_ov = pd.read_sql_query(query_overdue, conn, params=(tgl_sekarang,))
-    if not df_ov.empty:
-        str.error(f"⚠️ PERINGATAN: Ditemukan {len(df_ov)} Akun Kredit Jatuh Tempo!")
-        str.dataframe(df_ov, use_container_width=True)
-    else:
-        str.success("✅ Semua tagihan kredit aman teratur.")
-
-# --- FEATURE 8, 9, 10, 11, 12 (POSISI IMPORT DIPINDAH KELUAR AGAR SELALU MUNCUL) ---
-elif pilihan == "8. Rekapan Database & Aksi (9-12)":
-    str.header("🗄️ Pusat Pengelolaan Database")
-    tabel_pilihan = str.selectbox("Pilih Tabel", ["produk", "customer", "kredit"])
-    
-    # --- FORM UMAHA IMPORT SEKARANG SELALU MUNCUL PALING ATAS ---
-    str.subheader("📥 Fitur Import Database Masal")
-    uploaded_file = str.file_uploader(f"Unggah File CSV khusus untuk tabel {tabel_pilihan}", type=["csv"])
-    if uploaded_file is not None:
-        try:
-            df_import = pd.read_csv(uploaded_file)
-            if 'id' in df_import.columns:
-                df_import = df_import.drop(columns=['id'])
-            str.write("Pratinjau struktur data siap masuk:")
-            str.dataframe(df_import.head(5))
-            if str.button("Konfirmasi & Jalankan Penggabungan Data"):
-                df_import.to_sql(tabel_pilihan, conn, if_exists='append', index=False)
-                conn.commit()
-                str.success("Selamat! Data eksternal berhasil digabungkan ke database sistem!")
-                str.rerun()
-        except Exception as e:
