@@ -186,3 +186,39 @@ elif pilihan == "4. Data Customer":
         a_cust = str.text_area("Alamat Rumah")
         submit = str.form_submit_button("Simpan Data")
         if submit and n_cust:
+          c.execute("INSERT INTO customer (nama, telepon, alamat) VALUES (?,?,?)", (n_cust, t_cust, a_cust))
+conn.commit()
+str.success("Data customer berhasil disimpan!")
+str.dataframe(pd.read_sql_query("SELECT * FROM customer", conn), use_container_width=True)
+
+--- FEATURE 5: STOK REALTIME ---
+
+elif pilihan == "5. Stok Barang":
+str.header("📦 Real-time Stok Gudang")
+str.dataframe(pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok FROM produk", conn), use_container_width=True)
+
+--- FEATURE 6: OVERDUE ---
+
+elif pilihan == "6. Overdue":
+str.header("🚨 Data Pelanggan Telat Bayar (Overdue)")
+tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
+query_overdue = '''SELECT kredit.id, customer.nama, customer.telepon, kredit.total_hutang, kredit.tenor, kredit.cicilan_bulan, kredit.jatuh_tempo FROM kredit JOIN customer ON kredit.customer_id = customer.id WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?'''
+df_ov = pd.read_sql_query(query_overdue, conn, params=(tgl_sekarang,))
+if not df_ov.empty:
+str.dataframe(df_ov, use_container_width=True)
+else:
+str.success("✅ Tidak ada akun yang overdue hari ini.")
+
+--- FEATURE 7: ALERT KELAYAKAN ---
+
+elif pilihan == "7. Alert Kelayakan":
+str.header("🔔 Peringatan Alert Keterlambatan Real-time")
+tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
+query_overdue = '''SELECT customer.nama, customer.telepon, kredit.cicilan_bulan, kredit.tenor, kredit.jatuh_tempo FROM kredit JOIN customer ON kredit.customer_id = customer.id WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?'''
+df_ov = pd.read_sql_query(query_overdue, conn, params=(tgl_sekarang,))
+if not df_ov.empty:
+for _, r in df_ov.iterrows():
+str.error(f"⚠️ ALERT KELAYAKAN: Pelanggan {r['nama']} (WA: {r['telepon']}) sudah jatuh tempo pada {r['jatuh_tempo']}. Tenor: {r['tenor']}Bln. Angsuran: Rp {r['cicilan_bulan']:,.0f}")
+else:
+str.success("✅ Status Kelayakan Kredit Toko Aman Terkendali.")
+conn.close()
