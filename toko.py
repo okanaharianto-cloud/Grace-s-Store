@@ -10,7 +10,7 @@ import altair as alt
 
 # ==================== KONFIGURASI HALAMAN (HARUS PERTAMA) ====================
 st.set_page_config(
-    page_title="Toko Kredit PRO",
+    page_title="GRACE'S STORE (CASH & CREDIT)",
     page_icon="🏪",
     layout="wide",
     initial_sidebar_state="expanded"
