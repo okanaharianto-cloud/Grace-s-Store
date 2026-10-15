@@ -218,7 +218,7 @@ if "logged_in" not in st.session_state:
 if not st.session_state.logged_in:
     st.markdown("""
     <div class="main-header">
-        <h1>🏪 Toko Kredit PRO</h1>
+        <h1>🏪 GRACE'S STORE (CASH & CREDIT)</h1>
         <p>Sistem Manajemen Toko & Cicilan Modern</p>
     </div>
     """, unsafe_allow_html=True)
