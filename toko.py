@@ -38,7 +38,8 @@ menu = [
     "8. Rekapan Database",
     "9. Cetak Nota Transaksi",
     "10. Hapus Data",
-    "11. Eksport & 12. Import CSV"
+    "11. Eksport CSV (Download)",
+    "12. Import CSV (Unggah)"
 ]
 pilihan = str.sidebar.selectbox("Menu Navigasi", menu)
 
@@ -50,7 +51,6 @@ if pilihan == "1. Input Kategori & Skema Kredit":
     harga_modal = str.number_input("Harga Modal (Rp)", min_value=0.0, step=1000.0)
     stok_awal = str.number_input("Stok Awal", min_value=0, step=1)
     
-    # Hitung batas minimal otomatis
     harga_cash = round(harga_modal * 1.05, -2)
     dp_minimal = round(harga_cash * 0.2, -2)
     
@@ -63,7 +63,6 @@ if pilihan == "1. Input Kategori & Skema Kredit":
     with col_input2:
         tenor_pilihan = str.selectbox("Pilih Tenor Cicilan (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
     
-    # Hitung bunga proporsional (Jika 6 bulan = 40%, maka per bulan = 6.67%)
     rate_bunga_per_bulan = 0.40 / 6
     persen_bunga_custom = rate_bunga_per_bulan * tenor_pilihan
     
@@ -105,7 +104,7 @@ elif pilihan == "2. Input Barang Masuk (In)":
     else:
         str.info("Belum ada produk terdaftar.")
 
-# --- FEATURE 3: INPUT OUT (TRANSAKSI KREDIT FLEKSIBEL) ---
+# --- FEATURE 3: INPUT OUT ---
 elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
     str.header("📤 Transaksi Keluar (Pengajuan Kredit Baru)")
     df_cust = pd.read_sql_query("SELECT id, nama FROM customer", conn)
@@ -125,7 +124,7 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
         str.markdown("---")
         col_t1, col_t2 = str.columns(2)
         with col_t1:
-            dp_transaksi = str.number_input(f"Besar DP dari Cust (Bisa diisi lebih besar! Min: Rp {dp_min_transaksi:,.0f})", min_value=float(dp_min_transaksi), value=float(dp_min_transaksi), step=50000.0)
+            dp_transaksi = str.number_input(f"Besar DP dari Cust (Bisa lebih besar! Min: Rp {dp_min_transaksi:,.0f})", min_value=float(dp_min_transaksi), value=float(dp_min_transaksi), step=50000.0)
         with col_t2:
             tenor_transaksi = str.selectbox("Pilih Jangka Waktu Tenor (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
             
@@ -187,3 +186,5 @@ elif pilihan == "7. Alert Kelayakan":
         str.success("✅ Status Kelayakan Kredit Toko Aman Terkendali.")
 
 # --- FEATURE 8: REKAPAN ---
+elif pilihan == "8. Rekapan Database":
+    str.header("📊 Rekapan Isi Database")
