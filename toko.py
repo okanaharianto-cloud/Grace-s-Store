@@ -7,25 +7,18 @@ from datetime import datetime, timedelta
 conn = sqlite3.connect('toko_kredit.db', check_same_thread=False)
 c = conn.cursor()
 
-# Membuat tabel-tabel jika belum ada
 c.execute('''CREATE TABLE IF NOT EXISTS produk 
              (id INTEGER PRIMARY KEY, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
-
 c.execute('''CREATE TABLE IF NOT EXISTS transaksi_in 
              (id INTEGER PRIMARY KEY, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
-
 c.execute('''CREATE TABLE IF NOT EXISTS customer 
              (id INTEGER PRIMARY KEY, nama TEXT, telepon TEXT, alamat TEXT)''')
-
-# Pembaruan struktur tabel kredit agar mendukung tenor & bunga dinamis
 c.execute('''CREATE TABLE IF NOT EXISTS kredit 
              (id INTEGER PRIMARY KEY, customer_id INTEGER, produk_id INTEGER, 
               harga_cash REAL, dp REAL, pokok_hutang REAL, total_hutang REAL, 
               tenor INTEGER, cicilan_bulan REAL, sisa_hutang REAL, jatuh_tempo TEXT, status TEXT)''')
-
 conn.commit()
 
-# --- SINKRONISASI FUNGSI IMPORT / EXPORT ---
 def export_to_csv(table_name):
     df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
     return df.to_csv(index=False).encode('utf-8')
@@ -50,13 +43,12 @@ if pilihan == "1. Input Kategori & Simulasi Kredit":
     str.header("🧮 Input Produk & Kalkulator Simulasi")
     
     nama_produk = str.text_input("Nama Barang")
-    kategori = str.selectbox("Kategori", ["Elektronik", "Furnitur", "Gadget", "Motor", "Lainnya"])
+    kategori = str.selectbox("Kategori", ["Gadget", "Elektronik", "Furnitur", "Motor", "Lainnya"])
     harga_modal = str.number_input("Harga Modal (Rp)", min_value=0.0, step=1000.0)
     stok_awal = str.number_input("Stok Awal", min_value=0, step=1)
     
-    # Hitung nilai dasar cash dan batas minimal DP
-    harga_cash = harga_modal * 1.05
-    dp_minimal = harga_cash * 0.2
+    harga_cash = round(harga_modal * 1.05, -2)
+    dp_minimal = round(harga_cash * 0.2, -2)
     
     str.markdown("---")
     str.subheader("⚙️ Parameter Kredit Fleksibel")
@@ -65,37 +57,34 @@ if pilihan == "1. Input Kategori & Simulasi Kredit":
     with col_input1:
         dp_input = str.number_input(f"Input Uang Muka / DP (Minimal: Rp {dp_minimal:,.2f})", min_value=float(dp_minimal), value=float(dp_minimal), step=10000.0)
     with col_input2:
-        tenor_pilihan = str.selectbox("Pilih Tenor Cicilan (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3) # default 6x
+        tenor_pilihan = str.selectbox("Pilih Tenor Cicilan (Bulan)", [1, 2, 3, 6, 12, 24], index=3)
     
-    # Aturan bunga berdasarkan tenor secara proporsional (Jika 6 bulan = 40%, maka per bulan adalah 6.67%)
     rate_bunga_per_bulan = 0.40 / 6
     persen_bunga_custom = rate_bunga_per_bulan * tenor_pilihan
     
-    # Hitung formula fleksibel sesuai input user
-    pokok_hutang = harga_cash - dp_input
-    total_hutang = pokok_hutang * (1 + persen_bunga_custom)
-    cicilan_per_bulan = total_hutang / tenor_pilihan
+    pokok_hutang = round(harga_cash - dp_input, -2)
+    total_hutang = round(pokok_hutang * (1 + persen_bunga_custom), -2)
+    cicilan_per_bulan = round(total_hutang / tenor_pilihan, -2)
     
-    # Tampilkan hasil kalkulasi realtime
     col1, col2, col3 = str.columns(3)
-    col1.metric("Harga Cash (Modal + 5%)", f"Rp {harga_cash:,.2f}")
-    col2.metric("DP yang Dibayarkan", f"Rp {dp_input:,.2f}")
-    col3.metric("Pokok Hutang (PH Baru)", f"Rp {pokok_hutang:,.2f}")
+    col1.metric("Harga Cash (Modal + 5%)", f"Rp {harga_cash:,.0f}")
+    col2.metric("DP yang Dibayarkan", f"Rp {dp_input:,.0f}")
+    col3.metric("Pokok Hutang (PH Baru)", f"Rp {pokok_hutang:,.0f}")
     
     col4, col5 = str.columns(2)
-    col4.metric(f"Total Hutang (+ Bunga {persen_bunga_custom*100:.1f}%)", f"Rp {total_hutang:,.2f}")
-    col5.metric(f"Cicilan Bulanan ({tenor_pilihan} Kali)", f"Rp {cicilan_per_bulan:,.2f}")
+    col4.metric(f"Total Hutang (+ Bunga {persen_bunga_custom*100:.1f}%)", f"Rp {total_hutang:,.0f}")
+    col5.metric(f"Cicilan Bulanan ({tenor_pilihan} Kali)", f"Rp {cicilan_per_bulan:,.0f}")
     
     if str.button("Simpan Produk ke Database"):
         if nama_produk:
             c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok) VALUES (?,?,?,?)", 
                       (nama_produk, kategori, harga_modal, stok_awal))
             conn.commit()
-            str.success(f"Produk {nama_produk} berhasil dimasukkan ke daftar stok barang!")
+            str.success(f"Produk {nama_produk} berhasil dimasukkan!")
         else:
             str.warning("Nama barang wajib diisi.")
 
-# --- FEATURE 2: INPUT IN (BARANG MASUK) ---
+# --- FEATURE 2: INPUT IN ---
 elif pilihan == "2. Input Barang Masuk (In)":
     str.header("📥 Input Barang Masuk (Restock)")
     df_produk = pd.read_sql_query("SELECT id, nama FROM produk", conn)
@@ -112,13 +101,10 @@ elif pilihan == "2. Input Barang Masuk (In)":
             c.execute("UPDATE produk SET stok = stok + ? WHERE id = ?", (jumlah_masuk, p_id))
             conn.commit()
             str.success("Stok gudang berhasil ditambahkan!")
-    else:
-        str.info("Belum ada produk terdaftar.")
 
-# --- FEATURE 3: INPUT OUT (BARANG KELUAR / KREDIT FLEKSIBEL) ---
+# --- FEATURE 3: INPUT OUT ---
 elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
     str.header("📤 Transaksi Keluar (Pengajuan Kredit Baru)")
-    
     df_cust = pd.read_sql_query("SELECT id, nama FROM customer", conn)
     df_prod = pd.read_sql_query("SELECT id, nama, harga_modal, stok FROM produk WHERE stok > 0", conn)
     
@@ -132,24 +118,23 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
         pilih_p = str.selectbox("Pilih Barang yang Dikredit", list(opsi_prod.keys()))
         
         id_p, mod_p = opsi_prod[pilih_p]
-        h_cash = mod_p * 1.05
-        dp_min_transaksi = h_cash * 0.2
+        h_cash = round(mod_p * 1.05, -2)
+        dp_min_transaksi = round(h_cash * 0.2, -2)
         
         str.markdown("---")
         col_t1, col_t2 = str.columns(2)
         with col_t1:
-            dp_transaksi = str.number_input(f"Besar DP yang Dibayar Cust (Min: Rp {dp_min_transaksi:,.2f})", min_value=float(dp_min_transaksi), value=float(dp_min_transaksi), step=10000.0)
+            dp_transaksi = str.number_input(f"Besar DP yang Dibayar Cust (Min: Rp {dp_min_transaksi:,.0f})", min_value=float(dp_min_transaksi), value=float(dp_min_transaksi), step=10000.0)
         with col_t2:
-            tenor_transaksi = str.selectbox("Pilih Jangka Waktu Tenor (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
+            tenor_transaksi = str.selectbox("Pilih Jangka Waktu Tenor (Bulan)", [1, 2, 3, 6, 12, 24], index=3)
             
-        # Hitung Ulang Nominal
         rate_bunga_per_bulan = 0.40 / 6
         bunga_final = rate_bunga_per_bulan * tenor_transaksi
-        p_hut = h_cash - dp_transaksi
-        tot_hut = p_hut * (1 + bunga_final)
-        c_bul = tot_hut / tenor_transaksi
+        p_hut = round(h_cash - dp_transaksi, -2)
+        tot_hut = round(p_hut * (1 + bunga_final), -2)
+        c_bul = round(tot_hut / tenor_transaksi, -2)
         
-        str.info(f"🧾 Ringkasan Akad: Tenor {tenor_transaksi} Bulan | Cicilan: Rp {c_bul:,.2f}/bulan | DP Masuk: Rp {dp_transaksi:,.2f}")
+        str.info(f"🧾 Ringkasan Akad: Tenor {tenor_transaksi} Bulan | Cicilan: Rp {c_bul:,.0f}/bulan | DP Masuk: Rp {dp_transaksi:,.0f}")
         
         if str.button("Proses Kredit & Keluarkan Barang"):
             id_c = opsi_cust[pilih_c]
@@ -159,12 +144,11 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
                          total_hutang, tenor, cicilan_bulan, sisa_hutang, jatuh_tempo, status) 
                          VALUES (?,?,?,?,?,?,?,?,?,?,?)''', 
                       (id_c, id_p, h_cash, dp_transaksi, p_hut, tot_hut, tenor_transaksi, c_bul, tot_hut, tgl_tempo, "Berjalan"))
-            
             c.execute("UPDATE produk SET stok = stok - 1 WHERE id = ?", (id_p,))
             conn.commit()
-            str.success(f"Akad Kredit Sukses! Barang {pilih_p} resmi berjalan dengan tenor {tenor_transaksi} Bulan.")
+            str.success(f"Akad Kredit Sukses dengan tenor {tenor_transaksi} Bulan.")
 
-# --- FEATURE 4: DATA CUSTOMER ---
+# --- FITUR 4 ---
 elif pilihan == "4. Data Customer":
     str.header("👥 Data Pelanggan")
     with str.form("Form Customer"):
@@ -172,43 +156,46 @@ elif pilihan == "4. Data Customer":
         t_cust = str.text_input("Nomor Telepon/WA")
         a_cust = str.text_area("Alamat Rumah")
         submit = str.form_submit_button("Simpan Data")
-        
         if submit and n_cust:
             c.execute("INSERT INTO customer (nama, telepon, alamat) VALUES (?,?,?)", (n_cust, t_cust, a_cust))
             conn.commit()
             str.success("Data customer berhasil disimpan!")
-            
-    df_all_cust = pd.read_sql_query("SELECT * FROM customer", conn)
-    str.dataframe(df_all_cust, use_container_width=True)
+    str.dataframe(pd.read_sql_query("SELECT * FROM customer", conn), use_container_width=True)
 
-# --- FEATURE 5: STOK ---
+# --- FITUR 5 ---
 elif pilihan == "5. Stok Barang":
     str.header("📦 Real-time Stok Gudang")
-    df_stok = pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok FROM produk", conn)
-    str.dataframe(df_stok, use_container_width=True)
+    str.dataframe(pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok FROM produk", conn), use_container_width=True)
 
-# --- FEATURE 6 & 7: OVERDUE & ALERT ---
+# --- FITUR 6 & 7 ---
 elif pilihan == "6. Overdue & 7. Alert Kelayakan":
     str.header("🚨 Peringatan Keterlambatan Bayar (Overdue)")
     tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
-    
-    query_overdue = '''
-    SELECT kredit.id, customer.nama, customer.telepon, kredit.total_hutang, 
-           kredit.tenor, kredit.cicilan_bulan, kredit.jatuh_tempo
-    FROM kredit 
-    JOIN customer ON kredit.customer_id = customer.id
-    WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?
-    '''
+    query_overdue = '''SELECT kredit.id, customer.nama, customer.telepon, kredit.total_hutang, 
+                       kredit.tenor, kredit.cicilan_bulan, kredit.jatuh_tempo FROM kredit 
+                       JOIN customer ON kredit.customer_id = customer.id WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?'''
     df_ov = pd.read_sql_query(query_overdue, conn, params=(tgl_sekarang,))
-    
     if not df_ov.empty:
         str.error(f"⚠️ PERINGATAN: Ditemukan {len(df_ov)} Akun Kredit Jatuh Tempo!")
         str.dataframe(df_ov, use_container_width=True)
     else:
         str.success("✅ Semua tagihan kredit aman teratur.")
 
-# --- FEATURE 8, 9, 10, 11, 12: REKAPAN DATABASE ---
+# --- FITUR 8, 9, 10, 11, 12 (DIPERBAIKI) ---
 elif pilihan == "8. Rekapan Database & Aksi (9-12)":
     str.header("🗄️ Pusat Pengelolaan Database")
     tabel_pilihan = str.selectbox("Pilih Tabel", ["produk", "customer", "kredit"])
+    
     df_rekapan = pd.read_sql_query(f"SELECT * FROM {tabel_pilihan}", conn)
+    str.dataframe(df_rekapan, use_container_width=True)
+    
+    col1, col2 = str.columns(2)
+    with col1:
+        str.subheader("📤 Fitur Cetak / Eksport")
+        str.download_button(label="Unduh Berkas Excel/CSV", data=export_to_csv(tabel_pilihan), file_name=f"rekapan_{tabel_pilihan}.csv", mime='text/csv')
+    with col2:
+        str.subheader("🗑️ Fitur Hapus Data")
+        if not df_rekapan.empty:
+            id_hapus = str.number_input("Masukkan ID Data", min_value=int(df_rekapan['id'].min()), max_value=int(df_rekapan['id'].max()))
+            if str.button("Hapus Permanen", type="primary"):
+                c.execute(f"DELETE FROM {tabel_pilihan} WHERE id = ?", (id_hapus,))
