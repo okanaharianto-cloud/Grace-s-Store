@@ -8,13 +8,13 @@ conn = sqlite3.connect('toko_kredit.db', check_same_thread=False)
 c = conn.cursor()
 
 c.execute('''CREATE TABLE IF NOT EXISTS produk 
-             (id INTEGER PRIMARY KEY, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
 c.execute('''CREATE TABLE IF NOT EXISTS transaksi_in 
-             (id INTEGER PRIMARY KEY, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS customer 
-             (id INTEGER PRIMARY KEY, nama TEXT, telepon TEXT, alamat TEXT)''')
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, telepon TEXT, alamat TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS kredit 
-             (id INTEGER PRIMARY KEY, customer_id INTEGER, produk_id INTEGER, 
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, produk_id INTEGER, 
               harga_cash REAL, dp REAL, pokok_hutang REAL, total_hutang REAL, 
               tenor INTEGER, cicilan_bulan REAL, sisa_hutang REAL, jatuh_tempo TEXT, status TEXT)''')
 conn.commit()
@@ -102,7 +102,7 @@ elif pilihan == "2. Input Barang Masuk (In)":
             conn.commit()
             str.success("Stok gudang berhasil ditambahkan!")
 
-# --- FEATURE 3: INPUT OUT ---
+# --- FEATURE 3: INPUT OUT (DILENGKAPI TOMBOL PRINT NOTA KASIR) ---
 elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
     str.header("📤 Transaksi Keluar (Pengajuan Kredit Baru)")
     df_cust = pd.read_sql_query("SELECT id, nama FROM customer", conn)
@@ -147,8 +147,32 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
             c.execute("UPDATE produk SET stok = stok - 1 WHERE id = ?", (id_p,))
             conn.commit()
             str.success(f"Akad Kredit Sukses dengan tenor {tenor_transaksi} Bulan.")
+            
+            # --- NOTA SIAP CETAK ---
+            str.markdown("### 🖨️ NOTA TRANSAKSI KASIR")
+            nota_html = f"""
+            <div style="padding:15px; background-color:#ffffff; color:#000000; font-family:monospace; border:1px dashed #000; width:350px;">
+                <h4 style="text-align:center;margin:0;">GRACE'S STORE</h4>
+                <p style="text-align:center;margin:0;font-size:12px;">Nota Kredit Pembiayaan</p>
+                <hr style="border-top:1px dashed #000;">
+                <p style="margin:4px 0;">Tanggal : {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+                <p style="margin:4px 0;">Customer: {pilih_c}</p>
+                <p style="margin:4px 0;">Barang  : {pilih_p}</p>
+                <hr style="border-top:1px dashed #000;">
+                <table style="width:100%; font-size:13px;">
+                    <tr><td>Harga Cash</td><td style="text-align:right;">Rp {h_cash:,.0f}</td></tr>
+                    <tr><td>DP Masuk</td><td style="text-align:right;">- Rp {dp_transaksi:,.0f}</td></tr>
+                    <tr style="font-weight:bold;"><td>Pokok Hutang</td><td style="text-align:right;">Rp {p_hut:,.0f}</td></tr>
+                    <tr><td>Tenor Kredit</td><td style="text-align:right;">{tenor_transaksi} Bulan</td></tr>
+                    <tr style="font-weight:bold;"><td>Angsuran/Bln</td><td style="text-align:right;">Rp {c_bul:,.0f}</td></tr>
+                </table>
+                <hr style="border-top:1px dashed #000;">
+                <p style="text-align:center;font-size:12px;margin:0;">Terima Kasih Atas Kepercayaan Anda</p>
+            </div>
+            """
+            str.components.v1.html(nota_html + "<script>window.print();</script>", height=380)
 
-# --- FITUR 4 ---
+# --- FITUR LAINNYA 4-7 ---
 elif pilihan == "4. Data Customer":
     str.header("👥 Data Pelanggan")
     with str.form("Form Customer"):
@@ -162,40 +186,7 @@ elif pilihan == "4. Data Customer":
             str.success("Data customer berhasil disimpan!")
     str.dataframe(pd.read_sql_query("SELECT * FROM customer", conn), use_container_width=True)
 
-# --- FITUR 5 ---
 elif pilihan == "5. Stok Barang":
     str.header("📦 Real-time Stok Gudang")
     str.dataframe(pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok FROM produk", conn), use_container_width=True)
 
-# --- FITUR 6 & 7 ---
-elif pilihan == "6. Overdue & 7. Alert Kelayakan":
-    str.header("🚨 Peringatan Keterlambatan Bayar (Overdue)")
-    tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
-    query_overdue = '''SELECT kredit.id, customer.nama, customer.telepon, kredit.total_hutang, 
-                       kredit.tenor, kredit.cicilan_bulan, kredit.jatuh_tempo FROM kredit 
-                       JOIN customer ON kredit.customer_id = customer.id WHERE kredit.status = 'Berjalan' AND kredit.jatuh_tempo < ?'''
-    df_ov = pd.read_sql_query(query_overdue, conn, params=(tgl_sekarang,))
-    if not df_ov.empty:
-        str.error(f"⚠️ PERINGATAN: Ditemukan {len(df_ov)} Akun Kredit Jatuh Tempo!")
-        str.dataframe(df_ov, use_container_width=True)
-    else:
-        str.success("✅ Semua tagihan kredit aman teratur.")
-
-# --- FITUR 8, 9, 10, 11, 12 (DIPERBAIKI) ---
-elif pilihan == "8. Rekapan Database & Aksi (9-12)":
-    str.header("🗄️ Pusat Pengelolaan Database")
-    tabel_pilihan = str.selectbox("Pilih Tabel", ["produk", "customer", "kredit"])
-    
-    df_rekapan = pd.read_sql_query(f"SELECT * FROM {tabel_pilihan}", conn)
-    str.dataframe(df_rekapan, use_container_width=True)
-    
-    col1, col2 = str.columns(2)
-    with col1:
-        str.subheader("📤 Fitur Cetak / Eksport")
-        str.download_button(label="Unduh Berkas Excel/CSV", data=export_to_csv(tabel_pilihan), file_name=f"rekapan_{tabel_pilihan}.csv", mime='text/csv')
-    with col2:
-        str.subheader("🗑️ Fitur Hapus Data")
-        if not df_rekapan.empty:
-            id_hapus = str.number_input("Masukkan ID Data", min_value=int(df_rekapan['id'].min()), max_value=int(df_rekapan['id'].max()))
-            if str.button("Hapus Permanen", type="primary"):
-                c.execute(f"DELETE FROM {tabel_pilihan} WHERE id = ?", (id_hapus,))
