@@ -66,7 +66,6 @@ tanam_data_brosur_otomatis()
 str.set_page_config(page_title="Sistem Toko & Kredit Kasir", layout="wide")
 str.title("🏪 Sistem Manajemen Toko & Cicilan Kredit")
 
-# HANYA MENAMPILKAN MENU YANG 100% PASTI BERFUNGSI LANJAR
 menu = [
     "1. Input Kategori & Skema Kredit", 
     "2. Input Barang Masuk (In)", 
@@ -186,3 +185,4 @@ elif pilihan == "4. Data Customer":
         t_cust = str.text_input("Nomor Telepon/WA")
         a_cust = str.text_area("Alamat Rumah")
         submit = str.form_submit_button("Simpan Data")
+        if submit and n_cust:
