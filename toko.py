@@ -59,7 +59,7 @@ if pilihan == "1. Input Kategori & Skema Kredit":
     
     col_input1, col_input2 = str.columns(2)
     with col_input1:
-        dp_input = str.number_input(f"Uang Muka / DP (Bisa diisi lebih besar. Minimal: Rp {dp_minimal:,.2f})", min_value=float(dp_minimal), value=float(dp_minimal), step=50000.0)
+        dp_input = str.number_input(f"Uang Muka / DP (Minimal: Rp {dp_minimal:,.2f})", min_value=float(dp_minimal), value=float(dp_minimal), step=50000.0)
     with col_input2:
         tenor_pilihan = str.selectbox("Pilih Tenor Cicilan (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
     
@@ -124,7 +124,7 @@ elif pilihan == "3. Input Barang Keluar / Kredit (Out)":
         str.markdown("---")
         col_t1, col_t2 = str.columns(2)
         with col_t1:
-            dp_transaksi = str.number_input(f"Besar DP dari Cust (Bisa lebih besar! Min: Rp {dp_min_transaksi:,.0f})", min_value=float(dp_min_transaksi), value=float(dp_min_transaksi), step=50000.0)
+            dp_transaksi = str.number_input(f"Besar DP dari Cust (Min: Rp {dp_min_transaksi:,.0f})", min_value=float(dp_min_transaksi), value=float(dp_min_transaksi), step=50000.0)
         with col_t2:
             tenor_transaksi = str.selectbox("Pilih Jangka Waktu Tenor (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
             
@@ -188,3 +188,4 @@ elif pilihan == "7. Alert Kelayakan":
 # --- FEATURE 8: REKAPAN ---
 elif pilihan == "8. Rekapan Database":
     str.header("📊 Rekapan Isi Database")
+    tabel_pilihan = str.selectbox("Pilih Tabel Data", ["produk", "customer", "kredit"])
