@@ -19,7 +19,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS kredit
               tenor INTEGER, cicilan_bulan REAL, sisa_hutang REAL, jatuh_tempo TEXT, status TEXT)''')
 conn.commit()
 
-# --- 2. FITUR OTOMATIS DATA BROSUR (PENGGANTI IMPORT CSV) ---
+# --- 2. FITUR OTOMATIS DATA BROSUR ---
 def tanam_data_brosur_otomatis():
     c.execute("SELECT COUNT(*) FROM produk")
     if c.fetchone()[0] == 0:
@@ -73,7 +73,8 @@ menu = [
     "4. Data Customer", 
     "5. Stok Barang", 
     "6. Overdue", 
-    "7. Alert Kelayakan"
+    "7. Alert Kelayakan",
+    "8. Cetak, Ekspor & Impor"
 ]
 pilihan = str.sidebar.selectbox("Menu Navigasi", menu)
 
@@ -219,4 +220,153 @@ elif pilihan == "7. Alert Kelayakan":
     else:
         str.success("✅ Status Kelayakan Kredit Toko Aman Terkendali.")
 
-# conn.close()  # Dihapus karena Streamlit rerun dapat menyebabkan error
+# --- FEATURE 8: CETAK, EKSPOR & IMPOR ---
+elif pilihan == "8. Cetak, Ekspor & Impor":
+    str.header("🖨️ Cetak, Ekspor & Impor Data")
+    tab1, tab2, tab3 = str.tabs(["Cetak Invoice", "Ekspor Data", "Impor Data"])
+    
+    # --- TAB CETAK INVOICE ---
+    with tab1:
+        str.subheader("Cetak Invoice / Akad Kredit")
+        df_kredit = pd.read_sql_query('''
+            SELECT k.id, c.nama as customer_nama, p.nama as produk_nama, k.harga_cash, k.dp, k.pokok_hutang, k.total_hutang, k.tenor, k.cicilan_bulan, k.jatuh_tempo, k.status
+            FROM kredit k
+            JOIN customer c ON k.customer_id = c.id
+            JOIN produk p ON k.produk_id = p.id
+            ORDER BY k.id DESC
+        ''', conn)
+        if not df_kredit.empty:
+            df_kredit['label'] = df_kredit['id'].astype(str) + " - " + df_kredit['customer_nama'] + " - " + df_kredit['produk_nama']
+            opsi_kredit = dict(zip(df_kredit['label'], df_kredit['id']))
+            pilih_kredit = str.selectbox("Pilih Transaksi Kredit", list(opsi_kredit.keys()))
+            if pilih_kredit:
+                kredit_id = opsi_kredit[pilih_kredit]
+                detail = pd.read_sql_query('''
+                    SELECT k.*, c.nama as customer_nama, c.telepon, c.alamat, p.nama as produk_nama
+                    FROM kredit k
+                    JOIN customer c ON k.customer_id = c.id
+                    JOIN produk p ON k.produk_id = p.id
+                    WHERE k.id = ?
+                ''', conn, params=(kredit_id,)).iloc[0]
+                
+                html_invoice = f"""
+                <html>
+                <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                    .header {{ text-align: center; }}
+                    .details {{ margin-top: 20px; }}
+                    table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #f2f2f2; }}
+                    .total {{ font-weight: bold; }}
+                </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>INVOICE / AKAD KREDIT</h2>
+                        <p>Tanggal Cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}</p>
+                    </div>
+                    <div class="details">
+                        <p><strong>Customer:</strong> {detail['customer_nama']}</p>
+                        <p><strong>Telepon:</strong> {detail['telepon']}</p>
+                        <p><strong>Alamat:</strong> {detail['alamat']}</p>
+                        <p><strong>Produk:</strong> {detail['produk_nama']}</p>
+                    </div>
+                    <table>
+                        <tr><th>Deskripsi</th><th>Jumlah (Rp)</th></tr>
+                        <tr><td>Harga Cash</td><td>{detail['harga_cash']:,.0f}</td></tr>
+                        <tr><td>DP</td><td>{detail['dp']:,.0f}</td></tr>
+                        <tr><td>Pokok Hutang</td><td>{detail['pokok_hutang']:,.0f}</td></tr>
+                        <tr><td>Total Hutang (termasuk bunga)</td><td>{detail['total_hutang']:,.0f}</td></tr>
+                        <tr><td>Tenor</td><td>{detail['tenor']} Bulan</td></tr>
+                        <tr><td>Cicilan per Bulan</td><td>{detail['cicilan_bulan']:,.0f}</td></tr>
+                        <tr><td>Jatuh Tempo Pertama</td><td>{detail['jatuh_tempo']}</td></tr>
+                        <tr><td>Status</td><td>{detail['status']}</td></tr>
+                    </table>
+                    <p style="margin-top: 30px;">Terima kasih telah berbelanja.</p>
+                </body>
+                </html>
+                """
+                str.download_button(
+                    label="📥 Download Invoice (HTML)",
+                    data=html_invoice,
+                    file_name=f"invoice_kredit_{kredit_id}.html",
+                    mime="text/html"
+                )
+                str.info("Setelah diunduh, buka file HTML dan gunakan fitur print (Ctrl+P) untuk mencetak.")
+        else:
+            str.info("Belum ada data kredit.")
+    
+    # --- TAB EKSPOR DATA ---
+    with tab2:
+        str.subheader("Ekspor Data ke CSV")
+        tabel = str.selectbox("Pilih Data yang Ingin Diekspor", ["Produk", "Customer", "Kredit", "Transaksi Masuk"])
+        if tabel == "Produk":
+            df = pd.read_sql_query("SELECT * FROM produk", conn)
+        elif tabel == "Customer":
+            df = pd.read_sql_query("SELECT * FROM customer", conn)
+        elif tabel == "Kredit":
+            df = pd.read_sql_query("SELECT * FROM kredit", conn)
+        elif tabel == "Transaksi Masuk":
+            df = pd.read_sql_query("SELECT * FROM transaksi_in", conn)
+        
+        if not df.empty:
+            str.dataframe(df, use_container_width=True)
+            csv = df.to_csv(index=False).encode('utf-8')
+            str.download_button(
+                label=f"📥 Download {tabel} (CSV)",
+                data=csv,
+                file_name=f"{tabel.lower()}.csv",
+                mime="text/csv"
+            )
+        else:
+            str.info("Tidak ada data.")
+    
+    # --- TAB IMPOR DATA ---
+    with tab3:
+        str.subheader("Impor Data dari CSV")
+        jenis_impor = str.selectbox("Pilih Jenis Data yang Ingin Diimpor", ["Produk", "Customer"])
+        
+        if jenis_impor == "Produk":
+            str.markdown("Format CSV: `nama, kategori, harga_modal, stok`")
+            template_df = pd.DataFrame(columns=["nama", "kategori", "harga_modal", "stok"])
+            template_csv = template_df.to_csv(index=False).encode('utf-8')
+            str.download_button("📥 Download Template Produk (CSV)", template_csv, "template_produk.csv", "text/csv")
+            
+            uploaded_file = str.file_uploader("Pilih file CSV Produk", type=["csv"])
+            if uploaded_file is not None:
+                try:
+                    df_import = pd.read_csv(uploaded_file)
+                    str.dataframe(df_import.head())
+                    if str.button("Proses Impor Produk"):
+                        for _, row in df_import.iterrows():
+                            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok) VALUES (?,?,?,?)",
+                                      (row['nama'], row['kategori'], row['harga_modal'], row['stok']))
+                        conn.commit()
+                        str.success(f"Berhasil mengimpor {len(df_import)} produk.")
+                except Exception as e:
+                    str.error(f"Gagal membaca file: {e}")
+        
+        elif jenis_impor == "Customer":
+            str.markdown("Format CSV: `nama, telepon, alamat`")
+            template_df = pd.DataFrame(columns=["nama", "telepon", "alamat"])
+            template_csv = template_df.to_csv(index=False).encode('utf-8')
+            str.download_button("📥 Download Template Customer (CSV)", template_csv, "template_customer.csv", "text/csv")
+            
+            uploaded_file = str.file_uploader("Pilih file CSV Customer", type=["csv"])
+            if uploaded_file is not None:
+                try:
+                    df_import = pd.read_csv(uploaded_file)
+                    str.dataframe(df_import.head())
+                    if str.button("Proses Impor Customer"):
+                        for _, row in df_import.iterrows():
+                            c.execute("INSERT INTO customer (nama, telepon, alamat) VALUES (?,?,?)",
+                                      (row['nama'], row['telepon'], row['alamat']))
+                        conn.commit()
+                        str.success(f"Berhasil mengimpor {len(df_import)} customer.")
+                except Exception as e:
+                    str.error(f"Gagal membaca file: {e}")
+
+# Koneksi database tidak ditutup agar tidak error saat Streamlit rerun
+# conn.close()
