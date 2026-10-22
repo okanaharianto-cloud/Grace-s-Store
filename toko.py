@@ -48,6 +48,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ==================== KONSTANTA ====================
+PAKAIAN_KATEGORI = ["Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik"]
+SEMUA_KATEGORI = ["Gadget", "Elektronik",
+                  "Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik",
+                  "Furnitur", "Motor", "Lainnya"]
+
+def is_pakaian(kat):
+    return kat in PAKAIAN_KATEGORI
+
 # ==================== KONEKSI DATABASE ====================
 @st.cache_resource
 def get_connection():
@@ -77,12 +86,15 @@ c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas
              (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
 conn.commit()
 
-# ==================== MIGRASI: KOLOM MARKUP_PERSEN ====================
-try:
-    c.execute("ALTER TABLE produk ADD COLUMN markup_persen REAL DEFAULT 5.0")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass  # kolom sudah ada
+# ==================== MIGRASI KOLOM ====================
+for sql in [
+    "ALTER TABLE produk ADD COLUMN markup_persen REAL DEFAULT 5.0",
+    "ALTER TABLE produk ADD COLUMN harga_jual REAL",
+]:
+    try:
+        c.execute(sql); conn.commit()
+    except sqlite3.OperationalError:
+        pass
 
 # ==================== HELPER FUNCTIONS ====================
 def hash_password(p):
@@ -114,6 +126,12 @@ def show_flash():
         st.balloons(); st.session_state.balloons = False
     if st.session_state.get("snow"):
         st.snow(); st.session_state.snow = False
+
+def hitung_harga_cash(harga_modal, markup_persen, harga_jual):
+    """Pakaian: pakai harga_jual manual (jika ada). Non-pakaian: pakai markup."""
+    if harga_jual and float(harga_jual) > 0:
+        return float(harga_jual)
+    return round(float(harga_modal) * (1 + float(markup_persen or 5) / 100), -2)
 
 # Seed admin
 c.execute("SELECT COUNT(*) FROM users")
@@ -148,25 +166,35 @@ def tanam_data_brosur():
         conn.commit()
 
 def tanam_data_pakaian():
+    """Seed produk pakaian — harga_jual dibiarkan KOSONG untuk diisi manual."""
     existing = {row[0] for row in c.execute("SELECT nama FROM produk").fetchall()}
     data_pakaian = [
-        ("Kaos Polos Cotton Combed 30s", "Pakaian", 45000, 50, 80),
-        ("Kemeja Formal Slim Fit",       "Pakaian", 120000, 30, 70),
-        ("Polo Shirt Premium",           "Pakaian", 95000, 40, 75),
-        ("Celana Chino Pria",            "Pakaian", 135000, 25, 65),
-        ("Jeans Denim Original",         "Pakaian", 350000, 15, 60),
-        ("Jaket Hoodie Fleece",          "Pakaian", 180000, 20, 80),
-        ("Dress Wanita Casual",          "Pakaian", 150000, 20, 85),
-        ("Rok Plisket Wanita",           "Pakaian", 85000, 25, 80),
-        ("Blouse Wanita Korean Style",   "Pakaian", 110000, 25, 75),
-        ("Kaos Kaki Sport (3 pasang)",   "Pakaian", 25000, 100, 100),
-        ("Sneakers Pria Casual",         "Pakaian", 320000, 15, 50),
-        ("Sandal Kulit Wanita",          "Pakaian", 95000, 20, 60),
+        ("Tunik Lop Top",                      "Atasan",    80000,  1),
+        ("Rok Lurus",                          "Bawahan",   75000,  1),
+        ("Atasan Orange",                      "Atasan",    70000,  1),
+        ("Hem",                                "Atasan",    50000,  1),
+        ("Mini Dress",                         "Dress",     50000,  2),
+        ("Casual Dress",                       "Dress",     40000,  1),
+        ("Atasan Polkadot",                    "Atasan",    70000,  1),
+        ("Outer",                              "Outerwear", 70000,  2),
+        ("Spanya Dress",                       "Dress",     50000,  3),
+        ("Mini Dress Navy",                    "Dress",     75000,  1),
+        ("Celana Merah",                       "Bawahan",   35000,  1),
+        ("Batik Premium (Keterangan 2)",       "Batik",     60000,  1),
+        ("Batik Reguler (Keterangan 2)",       "Batik",     50000, 10),
+        ("Dress Premium (Keterangan 3)",       "Dress",     50000, 30),
+        ("Dress Ibu Merah",                    "Dress",     60000,  1),
+        ("Dress Baru (Keterangan 3)",          "Dress",     30000,  1),
+        ("Jeans Wool",                         "Bawahan",   80000,  1),
+        ("Midi Dress Hitam Merah",             "Dress",     30000,  1),
+        ("Atasan Ibu Merah",                   "Atasan",    50000,  1),
+        ("Atasan Basic (Keterangan 3)",        "Atasan",    20000,  5),
+        ("Long Dress / Gamis (Keterangan 4)",  "Dress",     50000, 20),
     ]
-    for nama, kat, modal, stok, markup in data_pakaian:
+    for nama, kat, modal, stok in data_pakaian:
         if nama not in existing:
-            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen) "
-                      "VALUES (?,?,?,?,?)", (nama, kat, modal, stok, markup))
+            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) "
+                      "VALUES (?,?,?,?,0,NULL)", (nama, kat, modal, stok))
     conn.commit()
 
 tanam_data_brosur()
@@ -256,6 +284,11 @@ if pilihan == "🏠 Dashboard":
     laba = c.execute("SELECT COALESCE(SUM((k.dp + k.total_hutang) - p.harga_modal),0) FROM kredit k JOIN produk p ON k.produk_id = p.id").fetchone()[0]
     margin_persen = (laba / pendapatan * 100) if pendapatan > 0 else 0
 
+    pakaian_belum_harga = c.execute(
+        f"SELECT COUNT(*) FROM produk WHERE kategori IN ({','.join(['?']*len(PAKAIAN_KATEGORI))}) "
+        f"AND (harga_jual IS NULL OR harga_jual <= 0)",
+        tuple(PAKAIAN_KATEGORI)).fetchone()[0]
+
     html = '<div class="metric-grid">'
     html += metric_card("📦 Total Produk", f"{total_produk} item", "card-blue")
     html += metric_card("🎒 Total Stok", f"{total_stok} unit", "card-purple")
@@ -269,6 +302,10 @@ if pilihan == "🏠 Dashboard":
     html += metric_card("✅ Kredit Lunas", f"{kredit_lunas} akun", "card-green")
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
+
+    if pakaian_belum_harga > 0:
+        st.warning(f"⚠️ **{pakaian_belum_harga} produk pakaian belum diisi harga jual.** "
+                   f"Buka menu **📦 Stok Barang** → **Edit Harga Jual Pakaian** untuk mengisi.")
 
     st.markdown('<div class="section-header"><h3>📊 Analitik Penjualan</h3></div>', unsafe_allow_html=True)
     col_chart1, col_chart2 = st.columns(2)
@@ -336,30 +373,36 @@ elif pilihan == "🧮 Input Produk & Skema":
         col1, col2 = st.columns(2)
         with col1:
             nama_produk = st.text_input("Nama Produk")
-            kategori = st.selectbox("Kategori",
-                ["Gadget", "Elektronik", "Pakaian", "Furnitur", "Motor", "Lainnya"])
+            kategori = st.selectbox("Kategori", SEMUA_KATEGORI)
         with col2:
             harga_modal = st.number_input("Harga Modal (Rp)", min_value=0.0, step=1000.0)
             stok_awal = st.number_input("Stok Awal", min_value=0, step=1)
 
-        default_markup = 60.0 if kategori == "Pakaian" else 5.0
-        markup_persen = st.number_input(
-            "Markup / Margin (%) — Pakaian umumnya 60-100%, Gadget 5-15%",
-            min_value=0.0, max_value=300.0, value=default_markup, step=5.0)
-        st.caption(f"💡 Harga Cash Otomatis = Modal × (1 + {markup_persen:.0f}%) = "
-                   f"**{format_rp(round(harga_modal * (1 + markup_persen/100), -2))}**")
+        if is_pakaian(kategori):
+            st.info("👕 **Kategori pakaian**: isi **Harga Jual (Rp)** manual — markup dinonaktifkan.")
+            harga_jual = st.number_input("Harga Jual (Rp)", min_value=0.0, step=1000.0,
+                                          help="Harga yang akan dijual ke customer")
+            markup_persen = 0
+        else:
+            st.info("⚙️ **Non-pakaian**: gunakan **Markup (%)** dari harga modal.")
+            markup_persen = st.number_input("Markup / Margin (%)",
+                min_value=0.0, max_value=300.0, value=5.0, step=5.0)
+            harga_jual = None
+            st.caption(f"💡 Harga Cash Otomatis = Modal × (1 + {markup_persen:.0f}%) = "
+                       f"**{format_rp(round(harga_modal * (1 + markup_persen/100), -2))}**")
 
         if st.button("💾 Simpan Produk"):
-            if nama_produk and harga_modal > 0:
-                c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen) "
-                          "VALUES (?,?,?,?,?)",
-                          (nama_produk, kategori, harga_modal, stok_awal, markup_persen))
+            if not nama_produk or harga_modal <= 0:
+                st.warning("⚠️ Nama dan harga modal wajib diisi")
+            else:
+                c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) "
+                          "VALUES (?,?,?,?,?,?)",
+                          (nama_produk, kategori, harga_modal, stok_awal,
+                           markup_persen, harga_jual))
                 conn.commit()
                 log_aksi(st.session_state.username, "TAMBAH_PRODUK", nama_produk)
                 flash(f"✅ Produk **{nama_produk}** berhasil disimpan!", "success")
                 st.rerun()
-            else:
-                st.warning("⚠️ Nama dan harga modal wajib diisi")
 
     st.markdown('<div class="section-header"><h3>⚙️ Simulasi Skema Kredit & Margin</h3></div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
@@ -427,7 +470,8 @@ elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Transaksi Kredit Baru</h1></div>', unsafe_allow_html=True)
     df_cust = pd.read_sql_query("SELECT id, nama FROM customer", conn)
     df_prod = pd.read_sql_query(
-        "SELECT id, nama, harga_modal, stok, COALESCE(markup_persen, 5) as markup_persen "
+        "SELECT id, nama, kategori, harga_modal, stok, "
+        "COALESCE(markup_persen, 5) as markup_persen, harga_jual "
         "FROM produk WHERE stok > 0 ORDER BY nama", conn)
 
     if df_cust.empty or df_prod.empty:
@@ -439,14 +483,27 @@ elif pilihan == "📤 Kredit Baru":
             pilih_c = st.selectbox("👤 Pilih Customer", list(opsi_cust.keys()))
         with col2:
             opsi_prod = {f"{r['nama']} (stok: {r['stok']})":
-                         (r['id'], r['harga_modal'], r['markup_persen'])
+                         (r['id'], r['nama'], r['kategori'], r['harga_modal'],
+                          r['markup_persen'], r['harga_jual'])
                          for _, r in df_prod.iterrows()}
             pilih_p = st.selectbox("📱 Pilih Produk", list(opsi_prod.keys()))
 
-        id_p, mod_p, mk_p = opsi_prod[pilih_p]
-        h_cash = round(mod_p * (1 + mk_p / 100), -2)
+        id_p, nama_p, kat_p, mod_p, mk_p, hj_p = opsi_prod[pilih_p]
+
+        # Validasi harga jual untuk pakaian
+        if is_pakaian(kat_p) and (not hj_p or hj_p <= 0):
+            st.error(f"❌ Harga jual untuk **{nama_p}** belum diisi.\n\n"
+                     f"Buka menu **📦 Stok Barang** → tab **Edit Harga Jual Pakaian** "
+                     f"untuk mengisi harga jual terlebih dahulu.")
+            st.stop()
+
+        h_cash = hitung_harga_cash(mod_p, mk_p, hj_p)
         dp_min = round(h_cash * 0.2, -2)
-        st.caption(f"📌 Markup produk ini: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
+
+        if is_pakaian(kat_p):
+            st.caption(f"👕 Pakaian — **Harga Jual (manual)**: {format_rp(h_cash)}")
+        else:
+            st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
 
         st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Tenor</h3></div>', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
@@ -632,90 +689,178 @@ elif pilihan == "👥 Data Customer":
 elif pilihan == "📦 Stok Barang":
     st.markdown('<div class="main-header"><h1>📦 Real-time Stok Gudang</h1></div>', unsafe_allow_html=True)
 
-    df_p = pd.read_sql_query("""
-        SELECT p.*, (SELECT COUNT(*) FROM kredit k WHERE k.produk_id = p.id) as terjual
-        FROM produk p ORDER BY stok ASC
-    """, conn)
+    tab1, tab2, tab3 = st.tabs([
+        "📋 Daftar Stok", "✏️ Edit Harga Jual Pakaian", "🗑️ Edit/Hapus Produk"
+    ])
 
-    total_item   = len(df_p)
-    total_unit   = df_p['stok'].sum() if not df_p.empty else 0
-    total_terjual = df_p['terjual'].sum() if not df_p.empty else 0
-    total_nilai  = (df_p['stok'] * df_p['harga_modal']).sum() if not df_p.empty else 0
+    # ---------- TAB 1: Daftar Stok ----------
+    with tab1:
+        df_p = pd.read_sql_query("""
+            SELECT p.*, (SELECT COUNT(*) FROM kredit k WHERE k.produk_id = p.id) as terjual
+            FROM produk p ORDER BY stok ASC
+        """, conn)
 
-    html = '<div class="metric-grid">'
-    html += metric_card("📦 Jenis Produk", f"{total_item} item", "card-blue")
-    html += metric_card("🎒 Sisa Stok", f"{total_unit} unit", "card-purple")
-    html += metric_card("🛍️ Barang Terjual", f"{total_terjual} unit", "card-orange")
-    html += metric_card("💎 Nilai Stok", format_rp(total_nilai), "card-green")
-    html += '</div>'
-    st.markdown(html, unsafe_allow_html=True)
+        total_item   = len(df_p)
+        total_unit   = df_p['stok'].sum() if not df_p.empty else 0
+        total_terjual = df_p['terjual'].sum() if not df_p.empty else 0
+        total_nilai  = (df_p['stok'] * df_p['harga_modal']).sum() if not df_p.empty else 0
 
-    col1, col2 = st.columns(2)
-    with col1:
-        filter_kat = st.multiselect("Filter Kategori",
-                                     df_p['kategori'].unique().tolist(),
-                                     default=df_p['kategori'].unique().tolist())
-    with col2:
-        cari = st.text_input("🔍 Cari Nama Produk")
+        html = '<div class="metric-grid">'
+        html += metric_card("📦 Jenis Produk", f"{total_item} item", "card-blue")
+        html += metric_card("🎒 Sisa Stok", f"{total_unit} unit", "card-purple")
+        html += metric_card("🛍️ Barang Terjual", f"{total_terjual} unit", "card-orange")
+        html += metric_card("💎 Nilai Stok (Modal)", format_rp(total_nilai), "card-green")
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)
 
-    df_f = df_p[df_p['kategori'].isin(filter_kat)]
-    if cari:
-        df_f = df_f[df_f['nama'].str.contains(cari, case=False, na=False)]
+        col1, col2 = st.columns(2)
+        with col1:
+            filter_kat = st.multiselect("Filter Kategori",
+                                        df_p['kategori'].unique().tolist(),
+                                        default=df_p['kategori'].unique().tolist())
+        with col2:
+            cari = st.text_input("🔍 Cari Nama Produk")
 
-    df_f = df_f.copy()
-    df_f['harga_cash'] = df_f.apply(
-        lambda r: round(r['harga_modal'] * (1 + (r.get('markup_persen', 5) or 5) / 100), -2),
-        axis=1)
+        df_f = df_p[df_p['kategori'].isin(filter_kat)]
+        if cari:
+            df_f = df_f[df_f['nama'].str.contains(cari, case=False, na=False)]
 
-    df_f = df_f.rename(columns={
-        'id': 'ID', 'nama': 'Nama Produk', 'kategori': 'Kategori',
-        'harga_modal': 'Harga Modal', 'harga_cash': 'Harga Cash (Est.)',
-        'stok': 'Sisa Stok', 'terjual': 'Terjual', 'markup_persen': 'Markup %'
-    })
-    df_f['Harga Modal'] = df_f['Harga Modal'].apply(format_rp)
-    df_f['Harga Cash (Est.)'] = df_f['Harga Cash (Est.)'].apply(format_rp)
-    st.dataframe(df_f, use_container_width=True, hide_index=True)
+        df_f = df_f.copy()
+        df_f['harga_cash'] = df_f.apply(
+            lambda r: hitung_harga_cash(r['harga_modal'], r.get('markup_persen', 5),
+                                        r.get('harga_jual')), axis=1)
 
-    if st.session_state.role == "admin" and not df_p.empty:
-        st.markdown('<div class="section-header"><h3>✏️ Edit / Hapus Produk</h3></div>', unsafe_allow_html=True)
-        opsi_edit = {f"{r['nama']} (ID:{r['id']})": r['id'] for _, r in df_p.iterrows()}
-        pilih_edit = st.selectbox("Pilih Produk", list(opsi_edit.keys()))
-        pid = opsi_edit[pilih_edit]
-        row = c.execute("SELECT nama, kategori, harga_modal, stok, "
-                        "COALESCE(markup_persen, 5) FROM produk WHERE id=?", (pid,)).fetchone()
+        df_f = df_f.rename(columns={
+            'id': 'ID', 'nama': 'Nama Produk', 'kategori': 'Kategori',
+            'harga_modal': 'Harga Modal', 'harga_cash': 'Harga Cash',
+            'stok': 'Sisa Stok', 'terjual': 'Terjual',
+            'markup_persen': 'Markup %', 'harga_jual': 'Harga Jual (Pakaian)'
+        })
+        df_f['Harga Modal'] = df_f['Harga Modal'].apply(format_rp)
+        df_f['Harga Cash'] = df_f['Harga Cash'].apply(format_rp)
+        df_f['Harga Jual (Pakaian)'] = df_f['Harga Jual (Pakaian)'].apply(
+            lambda x: format_rp(x) if pd.notna(x) and x > 0 else "—")
+        st.dataframe(df_f, use_container_width=True, hide_index=True)
 
-        with st.form("form_edit"):
-            col1, col2 = st.columns(2)
-            with col1:
-                new_nama = st.text_input("Nama", row[0])
-                kat_list = ["Gadget", "Elektronik", "Pakaian", "Furnitur", "Motor", "Lainnya"]
-                new_kat = st.selectbox("Kategori", kat_list,
-                                       index=kat_list.index(row[1]) if row[1] in kat_list else 0)
-            with col2:
-                new_harga = st.number_input("Harga Modal", value=float(row[2]), step=1000.0)
-                new_stok = st.number_input("Stok", value=int(row[3]), step=1)
-            new_markup = st.number_input("Markup / Margin (%)",
-                                          value=float(row[4]), min_value=0.0,
-                                          max_value=300.0, step=5.0)
-            colA, colB = st.columns(2)
+    # ---------- TAB 2: Bulk Edit Harga Jual Pakaian ----------
+    with tab2:
+        st.markdown("### 👕 Isi Harga Jual untuk Semua Produk Pakaian")
+        st.info("Isi kolom **Harga Jual (Rp)** untuk setiap produk pakaian. "
+                "Kosongkan jika belum dijual. Klik **💾 Simpan Semua** setelah selesai.")
+
+        placeholders = ",".join(["?"] * len(PAKAIAN_KATEGORI))
+        df_pk = pd.read_sql_query(
+            f"SELECT id, nama, kategori, harga_modal, harga_jual FROM produk "
+            f"WHERE kategori IN ({placeholders}) ORDER BY kategori, nama",
+            conn, params=tuple(PAKAIAN_KATEGORI))
+
+        if df_pk.empty:
+            st.info("Belum ada produk pakaian.")
+        else:
+            df_edit = df_pk.copy()
+            df_edit['harga_jual'] = df_edit['harga_jual'].fillna(0).astype(float)
+
+            edited = st.data_editor(
+                df_edit,
+                column_config={
+                    "id":          st.column_config.NumberColumn("ID", disabled=True, width="small"),
+                    "nama":        st.column_config.TextColumn("Produk", disabled=True, width="large"),
+                    "kategori":    st.column_config.TextColumn("Kategori", disabled=True, width="small"),
+                    "harga_modal": st.column_config.NumberColumn("Modal (Rp)", disabled=True,
+                                                                format="Rp %d", width="medium"),
+                    "harga_jual":  st.column_config.NumberColumn("Harga Jual (Rp)",
+                                                                min_value=0, step=1000,
+                                                                format="Rp %d", width="medium"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="editor_harga_jual_pakaian"
+            )
+
+            colA, colB = st.columns([1, 1])
             with colA:
-                simpan = st.form_submit_button("💾 Update")
-            with colB:
-                hapus = st.form_submit_button("🗑️ Hapus")
+                if st.button("💾 Simpan Semua Harga Jual", key="simpan_bulk"):
+                    n_updated = 0
+                    for _, row in edited.iterrows():
+                        hj = row['harga_jual'] if row['harga_jual'] > 0 else None
+                        c.execute("UPDATE produk SET harga_jual=? WHERE id=?", (hj, row['id']))
+                        n_updated += 1
+                    conn.commit()
+                    log_aksi(st.session_state.username, "EDIT_HARGA_JUAL_BULK", f"{n_updated} produk")
+                    flash(f"✅ Harga jual {n_updated} produk pakaian tersimpan!", "success")
+                    st.rerun()
 
-            if simpan:
-                c.execute("UPDATE produk SET nama=?, kategori=?, harga_modal=?, stok=?, markup_persen=? WHERE id=?",
-                          (new_nama, new_kat, new_harga, new_stok, new_markup, pid))
-                conn.commit()
-                log_aksi(st.session_state.username, "EDIT_PRODUK", f"ID {pid}")
-                flash("✅ Produk diupdate!", "success")
-                st.rerun()
-            if hapus:
-                c.execute("DELETE FROM produk WHERE id=?", (pid,))
-                conn.commit()
-                log_aksi(st.session_state.username, "HAPUS_PRODUK", f"ID {pid}")
-                flash("🗑️ Produk dihapus!", "success")
-                st.rerun()
+            with colB:
+                belum = int((edited['harga_jual'] <= 0).sum())
+                if belum > 0:
+                    st.warning(f"⚠️ **{belum} produk** belum diisi harga jual.")
+                else:
+                    st.success("✅ Semua produk pakaian sudah punya harga jual.")
+
+    # ---------- TAB 3: Edit/Hapus Produk ----------
+    with tab3:
+        if st.session_state.role != "admin":
+            st.info("Hanya admin yang dapat edit/hapus produk.")
+        else:
+            df_p = pd.read_sql_query("SELECT * FROM produk ORDER BY nama", conn)
+            if df_p.empty:
+                st.info("Belum ada produk.")
+            else:
+                opsi_edit = {f"{r['nama']} (ID:{r['id']})": r['id'] for _, r in df_p.iterrows()}
+                pilih_edit = st.selectbox("Pilih Produk", list(opsi_edit.keys()), key="edit_prod_sel")
+                pid = opsi_edit[pilih_edit]
+                row = c.execute("SELECT nama, kategori, harga_modal, stok, "
+                                "COALESCE(markup_persen, 5), harga_jual "
+                                "FROM produk WHERE id=?", (pid,)).fetchone()
+
+                is_pk = is_pakaian(row[1])
+
+                with st.form("form_edit"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        new_nama = st.text_input("Nama", row[0])
+                        new_kat = st.selectbox("Kategori", SEMUA_KATEGORI,
+                                               index=SEMUA_KATEGORI.index(row[1])
+                                                     if row[1] in SEMUA_KATEGORI else 0)
+                    with col2:
+                        new_harga = st.number_input("Harga Modal", value=float(row[2]), step=1000.0)
+                        new_stok = st.number_input("Stok", value=int(row[3]), step=1)
+
+                    if is_pk:
+                        st.caption("👕 Kategori pakaian — isi **Harga Jual (Rp)** manual.")
+                        new_harga_jual = st.number_input(
+                            "Harga Jual (Rp)",
+                            value=float(row[5]) if row[5] else 0.0,
+                            step=1000.0)
+                        new_markup = 0.0
+                    else:
+                        st.caption("⚙️ Non-pakaian — gunakan **Markup (%)**.")
+                        new_markup = st.number_input(
+                            "Markup / Margin (%)",
+                            value=float(row[4]), min_value=0.0, max_value=300.0, step=5.0)
+                        new_harga_jual = row[5]
+
+                    colA, colB = st.columns(2)
+                    with colA:
+                        simpan = st.form_submit_button("💾 Update")
+                    with colB:
+                        hapus = st.form_submit_button("🗑️ Hapus")
+
+                    if simpan:
+                        c.execute("UPDATE produk SET nama=?, kategori=?, harga_modal=?, stok=?, "
+                                  "markup_persen=?, harga_jual=? WHERE id=?",
+                                  (new_nama, new_kat, new_harga, new_stok,
+                                   new_markup, new_harga_jual, pid))
+                        conn.commit()
+                        log_aksi(st.session_state.username, "EDIT_PRODUK", f"ID {pid}")
+                        flash("✅ Produk diupdate!", "success")
+                        st.rerun()
+                    if hapus:
+                        c.execute("DELETE FROM produk WHERE id=?", (pid,))
+                        conn.commit()
+                        log_aksi(st.session_state.username, "HAPUS_PRODUK", f"ID {pid}")
+                        flash("🗑️ Produk dihapus!", "success")
+                        st.rerun()
 
 # ==================== 8. OVERDUE & DENDA ====================
 elif pilihan == "🚨 Overdue & Denda":
@@ -878,7 +1023,7 @@ elif pilihan == "📊 Laporan & Analitik":
             ).properties(height=350)
             st.altair_chart(chart, use_container_width=True)
 
-# ==================== 11. MODAL VS PROFIT (NEW) ====================
+# ==================== 11. MODAL VS PROFIT ====================
 elif pilihan == "👕 Modal vs Profit":
     st.markdown('<div class="main-header"><h1>👕 Analisis Modal vs Profit</h1>'
                 '<p>Perbandingan HPP (Harga Pokok) vs Laba per Kategori</p></div>',
@@ -898,6 +1043,7 @@ elif pilihan == "👕 Modal vs Profit":
         q_base = """
             SELECT p.id, p.nama, p.kategori, p.harga_modal,
                    COALESCE(p.markup_persen, 5) as markup_persen, p.stok,
+                   p.harga_jual,
                    COALESCE(SUM(k.dp + k.total_hutang), 0) as total_revenue,
                    COUNT(k.id) as terjual
             FROM produk p
@@ -905,6 +1051,11 @@ elif pilihan == "👕 Modal vs Profit":
         """
         if kat_pilih == "Semua":
             df_data = pd.read_sql_query(q_base + " GROUP BY p.id ORDER BY p.kategori, p.nama", conn)
+        elif kat_pilih == "Pakaian":
+            placeholders = ",".join(["?"] * len(PAKAIAN_KATEGORI))
+            df_data = pd.read_sql_query(
+                q_base + f" WHERE p.kategori IN ({placeholders}) GROUP BY p.id ORDER BY p.kategori, p.nama",
+                conn, params=tuple(PAKAIAN_KATEGORI))
         else:
             df_data = pd.read_sql_query(
                 q_base + " WHERE p.kategori = ? GROUP BY p.id ORDER BY p.nama",
@@ -913,13 +1064,24 @@ elif pilihan == "👕 Modal vs Profit":
         df_data['harga_modal'] = df_data['harga_modal'].fillna(0)
         df_data['markup_persen'] = df_data['markup_persen'].fillna(5)
         df_data['harga_cash']   = df_data.apply(
-            lambda r: round(r['harga_modal'] * (1 + r['markup_persen'] / 100), -2), axis=1)
+            lambda r: hitung_harga_cash(r['harga_modal'], r['markup_persen'], r.get('harga_jual')),
+            axis=1)
         df_data['profit_unit']  = df_data['harga_cash'] - df_data['harga_modal']
         df_data['margin_persen'] = df_data.apply(
             lambda r: (r['profit_unit'] / r['harga_cash'] * 100) if r['harga_cash'] > 0 else 0,
             axis=1)
         df_data['total_modal']  = df_data['harga_modal'] * df_data['terjual']
         df_data['total_profit'] = df_data['total_revenue'] - df_data['total_modal']
+
+        # Info produk pakaian tanpa harga jual
+        if kat_pilih in ["Semua", "Pakaian"]:
+            belum = df_data[
+                df_data['kategori'].isin(PAKAIAN_KATEGORI) &
+                ((df_data['harga_jual'].isna()) | (df_data['harga_jual'] <= 0))]
+            if not belum.empty:
+                st.warning(f"⚠️ **{len(belum)} produk pakaian belum diisi harga jual.** "
+                           f"Buka **📦 Stok Barang → ✏️ Edit Harga Jual Pakaian** untuk mengisi.")
+                st.caption("Produk tanpa harga jual ditampilkan dengan estimasi dari harga modal.")
 
         tot_modal   = df_data['total_modal'].sum()
         tot_revenue = df_data['total_revenue'].sum()
@@ -968,9 +1130,15 @@ elif pilihan == "👕 Modal vs Profit":
 
         st.markdown('<div class="section-header"><h3>📋 Detail Modal vs Profit per Produk</h3></div>',
                     unsafe_allow_html=True)
-        df_show = df_data.copy().rename(columns={
+        df_show = df_data.copy()
+        df_show['harga_jual_label'] = df_show.apply(
+            lambda r: format_rp(r['harga_jual'])
+                      if (r['harga_jual'] and r['harga_jual'] > 0) else "—",
+            axis=1)
+        df_show = df_show.rename(columns={
             'nama': 'Produk', 'kategori': 'Kategori', 'harga_modal': 'Modal/Unit',
             'markup_persen': 'Markup', 'harga_cash': 'Harga Cash',
+            'harga_jual_label': 'Harga Jual',
             'profit_unit': 'Profit/Unit', 'margin_persen': 'Margin %',
             'terjual': 'Terjual', 'total_modal': 'Total Modal',
             'total_profit': 'Total Profit', 'total_revenue': 'Total Revenue',
@@ -982,9 +1150,9 @@ elif pilihan == "👕 Modal vs Profit":
         df_show['Margin %'] = df_show['Margin %'].apply(lambda x: f"{x:.1f}%")
         df_show['Markup']   = df_show['Markup'].apply(lambda x: f"{x:.0f}%")
         st.dataframe(
-            df_show[['Produk', 'Kategori', 'Modal/Unit', 'Harga Cash', 'Profit/Unit',
-                     'Margin %', 'Markup', 'Terjual', 'Total Modal', 'Total Revenue',
-                     'Total Profit', 'Stok']],
+            df_show[['Produk', 'Kategori', 'Modal/Unit', 'Harga Jual', 'Harga Cash',
+                     'Profit/Unit', 'Margin %', 'Markup', 'Terjual', 'Total Modal',
+                     'Total Revenue', 'Total Profit', 'Stok']],
             use_container_width=True, hide_index=True)
 
         st.markdown('<div class="section-header"><h3>🏷️ Ringkasan per Kategori</h3></div>',
@@ -1000,7 +1168,7 @@ elif pilihan == "👕 Modal vs Profit":
             if r['total_revenue'] > 0 else 0, axis=1)
 
         def highlight_pakaian(row):
-            if row['Kategori'] == 'Pakaian':
+            if row['Kategori'] in PAKAIAN_KATEGORI:
                 return ['background-color: #fff3cd; font-weight: bold'] * len(row)
             return [''] * len(row)
 
@@ -1016,7 +1184,7 @@ elif pilihan == "👕 Modal vs Profit":
         })
         st.dataframe(df_kat_show.style.apply(highlight_pakaian, axis=1),
                      use_container_width=True, hide_index=True)
-        st.caption("💡 Baris **Pakaian** disorot kuning agar mudah dibandingkan.")
+        st.caption("💡 Baris sub-kategori **Pakaian** (Atasan/Bawahan/Dress/Outerwear/Batik) disorot kuning.")
 
         st.markdown('<div class="section-header"><h3>📊 Perbandingan per Kategori</h3></div>',
                     unsafe_allow_html=True)
@@ -1145,7 +1313,8 @@ elif pilihan == "💾 Backup, Cetak & Impor":
                 if st.button("✅ Proses Impor"):
                     if jenis == "Produk":
                         for _, r in df_imp.iterrows():
-                            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok) VALUES (?,?,?,?)",
+                            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) "
+                                      "VALUES (?,?,?,?,0,NULL)",
                                       (r['nama'], r['kategori'], r['harga_modal'], r['stok']))
                     else:
                         for _, r in df_imp.iterrows():
@@ -1153,7 +1322,7 @@ elif pilihan == "💾 Backup, Cetak & Impor":
                                       (r['nama'], r['telepon'], r['alamat']))
                     conn.commit()
                     log_aksi(st.session_state.username, "IMPOR", f"{jenis}: {len(df_imp)} baris")
-                    flash(f"✅ Berhasil impor {len(df_imp)} data!", "success")
+                    flash(f"✅ Berhasil impor {len(df_imp)} data! (Isi harga jual pakaian di menu Stok Barang)", "success")
                     st.rerun()
             except Exception as e:
                 st.error(f"❌ Error: {e}")
