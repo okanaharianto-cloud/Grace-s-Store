@@ -131,21 +131,15 @@ def hitung_harga_cash(harga_modal, markup_persen, harga_jual):
     return round(float(harga_modal) * (1 + float(markup_persen or 5) / 100), -2)
 
 def recalculate_kredit(kredit_id):
-    """Fungsi khusus untuk hitung ulang sisa hutang jika pembayaran diedit/dihapus"""
+    """Hitung ulang sisa hutang jika pembayaran diedit/dihapus"""
     row = c.execute("SELECT total_hutang FROM kredit WHERE id=?", (kredit_id,)).fetchone()
-    if not row:
-        return
+    if not row: return
     total_hutang = row[0]
-    
-    # Total pokok yang sudah dibayar = (jumlah_bayar - denda)
     res = c.execute("SELECT COALESCE(SUM(jumlah_bayar - denda), 0) FROM pembayaran WHERE kredit_id=?", (kredit_id,)).fetchone()
     total_principal_paid = res[0]
-    
-    # Hitung sisa baru
     new_sisa = max(total_hutang - total_principal_paid, 0)
     new_sisa = round(new_sisa, -2)
     new_status = "Lunas" if new_sisa <= 0 else "Berjalan"
-    
     c.execute("UPDATE kredit SET sisa_hutang=?, status=? WHERE id=?", (new_sisa, new_status, kredit_id))
 
 # Seed admin
@@ -876,11 +870,65 @@ elif pilihan == "📊 Laporan & Analitik":
                 color=alt.Color('laba:Q', scale=alt.Scale(scheme='reds'), legend=None)
             ).properties(height=400)
             st.altair_chart(chart, use_container_width=True)
+
+            # ================= FITUR BARU: EDIT & HAPUS PENJUALAN (TERJUAL) =================
+            st.markdown('<div class="section-header"><h3>✏️ Edit / Hapus Transaksi Terjual (Kredit)</h3></div>', unsafe_allow_html=True)
+            
+            df_kredit_all = pd.read_sql_query("""
+                SELECT k.id, c.nama as customer, p.nama as produk, k.harga_cash, k.dp, 
+                       k.total_hutang, k.sisa_hutang, k.status, k.jatuh_tempo, k.tenor, k.cicilan_bulan
+                FROM kredit k 
+                JOIN customer c ON k.customer_id = c.id 
+                JOIN produk p ON k.produk_id = p.id
+                ORDER BY k.id DESC
+            """, conn)
+            st.dataframe(df_kredit_all, use_container_width=True, hide_index=True)
+
+            opsi_kredit = {f"#{r['id']} - {r['customer']} - {r['produk']} ({r['status']})": r['id'] for _, r in df_kredit_all.iterrows()}
+            pilih_kredit = st.selectbox("🔍 Pilih Transaksi Terjual", list(opsi_kredit.keys()))
+            kid_edit = opsi_kredit[pilih_kredit]
+            detail_k = df_kredit_all[df_kredit_all['id'] == kid_edit].iloc[0]
+
+            with st.form("form_edit_kredit"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    e_status = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(detail_k['status']) if detail_k['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
+                    e_jatuh_tempo = st.date_input("Jatuh Tempo", value=pd.to_datetime(detail_k['jatuh_tempo']).date())
+                    e_total = st.number_input("Total Hutang (Rp)", value=float(detail_k['total_hutang']), step=10000.0)
+                with c2:
+                    e_sisa = st.number_input("Sisa Hutang (Rp)", value=float(detail_k['sisa_hutang']), step=10000.0)
+                    e_cicilan = st.number_input("Cicilan/Bulan (Rp)", value=float(detail_k['cicilan_bulan']), step=10000.0)
+                    e_tenor = st.number_input("Tenor (Bulan)", value=int(detail_k['tenor']), step=1)
+                
+                st.info("⚠️ **Perhatian:** Menghapus transaksi terjual akan mengembalikan stok produk (+1) dan **menghapus semua riwayat pembayaran** untuk transaksi ini.")
+                
+                btn_edit = st.form_submit_button("💾 Simpan Perubahan")
+                btn_hapus = st.form_submit_button("🗑️ Hapus Transaksi (Kembalikan Stok)")
+
+                if btn_edit:
+                    if e_status == "Lunas": e_sisa = 0.0 # Paksa sisa 0 jika lunas
+                    c.execute("""UPDATE kredit SET status=?, jatuh_tempo=?, total_hutang=?, sisa_hutang=?, cicilan_bulan=?, tenor=? WHERE id=?""",
+                              (e_status, e_jatuh_tempo.strftime("%Y-%m-%d"), e_total, e_sisa, e_cicilan, e_tenor, kid_edit))
+                    conn.commit()
+                    log_aksi(st.session_state.username, "EDIT_KREDIT", f"ID {kid_edit}")
+                    flash("✅ Transaksi terjual berhasil diupdate!", "success")
+                    st.rerun()
+
+                if btn_hapus:
+                    # Kembalikan stok
+                    c.execute("UPDATE produk SET stok = stok + 1 WHERE id = (SELECT produk_id FROM kredit WHERE id=?)", (kid_edit,))
+                    # Hapus pembayaran terkait
+                    c.execute("DELETE FROM pembayaran WHERE kredit_id=?", (kid_edit,))
+                    # Hapus kredit
+                    c.execute("DELETE FROM kredit WHERE id=?", (kid_edit,))
+                    conn.commit()
+                    log_aksi(st.session_state.username, "HAPUS_KREDIT", f"ID {kid_edit}")
+                    flash("🗑️ Transaksi dihapus, stok dikembalikan, dan riwayat pembayaran dibersihkan!", "success")
+                    st.rerun()
         else:
-            st.info("Belum ada data")
+            st.info("Belum ada data penjualan")
 
     with tab2:
-        # --- FITUR BARU: EDIT & DELETE PEMBAYARAN ---
         df_b = pd.read_sql_query("""
             SELECT p.id, p.kredit_id, p.tanggal, c.nama, p.jumlah_bayar, p.denda, p.keterangan
             FROM pembayaran p JOIN kredit k ON p.kredit_id = k.id JOIN customer c ON k.customer_id = c.id
