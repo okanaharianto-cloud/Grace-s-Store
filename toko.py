@@ -183,31 +183,45 @@ def tanam_data_brosur():
 def tanam_data_pakaian():
     existing = {row[0] for row in c.execute("SELECT nama FROM produk").fetchall()}
     
-    # DATA BARU DARI GAMBAR (Harga Modal & Harga Jual sengaja dikosongkan / 0)
+    # Data produk baru dari gambar (Harga Modal & Jual = 0 / Kosong)
     data_pakaian = [
-        ("Emmanuel Dress (Putih)", "Dress", 0, 5),
-        ("Second Monster Female Hoodie (Orange)", "Atasan", 0, 5),
-        ("Dress Garis Lace (Hitam Putih)", "Dress", 0, 5),
-        ("Agler's Nightmare Jumpsuit Apron (Hitam)", "Bawahan", 0, 5),
-        ("Vera Two-Way Shirt Jolene (Olive)", "Atasan", 0, 5),
-        ("Sahara Double-Breasted Dress (Olive)", "Dress", 0, 5),
-        ("Dress Lace Pearl (Pink)", "Dress", 0, 5),
-        ("Blouse Ruffle Lace (Krem)", "Atasan", 0, 5),
-        ("Cottage Blouse (Hijau Floral)", "Atasan", 0, 5),
-        ("Gold Texture Dress (Beige)", "Dress", 0, 5),
-        ("Tunic Knit Wear (Abu-abu)", "Dress", 0, 5),
-        ("Sweater Knit Textured (Putih)", "Atasan", 0, 5),
-        ("Blouse Lace High-Neck (Putih)", "Atasan", 0, 5),
-        ("Trench Coat (Beige/Pink)", "Outerwear", 0, 5),
-        ("Dress Textured Sleeveless (Abu-abu)", "Dress", 0, 5),
-        ("Dress Textured Button (Beige)", "Dress", 0, 5),
-        ("Sora Pinafore Aurora Dress (Abu/Coklat)", "Dress", 0, 5),
+        # Data Lama
+        ("Tunik Lop Top", "Atasan", 80000, 1), ("Rok Lurus", "Bawahan", 75000, 1),
+        ("Atasan Orange", "Atasan", 70000, 1), ("Hem", "Atasan", 50000, 1),
+        ("Mini Dress", "Dress", 50000, 2), ("Casual Dress", "Dress", 40000, 1),
+        ("Atasan Polkadot", "Atasan", 70000, 1), ("Outer", "Outerwear", 70000, 2),
+        ("Spanya Dress", "Dress", 50000, 3), ("Mini Dress Navy", "Dress", 75000, 1),
+        ("Celana Merah", "Bawahan", 35000, 1), ("Batik Premium (Keterangan 2)", "Batik", 60000, 1),
+        ("Batik Reguler (Keterangan 2)", "Batik", 50000, 10), ("Dress Premium (Keterangan 3)", "Dress", 50000, 30),
+        ("Dress Ibu Merah", "Dress", 60000, 1), ("Dress Baru (Keterangan 3)", "Dress", 30000, 1),
+        ("Jeans Wool", "Bawahan", 80000, 1), ("Midi Dress Hitam Merah", "Dress", 30000, 1),
+        ("Atasan Ibu Merah", "Atasan", 50000, 1), ("Atasan Basic (Keterangan 3)", "Atasan", 20000, 5),
+        ("Long Dress / Gamis (Keterangan 4)", "Dress", 50000, 20),
+        
+        # Data BARU dari gambar (Harga 0, Stok 5)
+        ("Dress Putih Lengan Panjang", "Dress", 0, 5),
+        ("Hoodie Orange Female Monster", "Atasan", 0, 5),
+        ("Dress Stripe Hitam Putih", "Dress", 0, 5),
+        ("Jumpeuit Apron Hitam", "Pakaian", 0, 5),
+        ("Kemeja Two-Way Jolene Olive", "Atasan", 0, 5),
+        ("Dress Double-Breasted Olive", "Dress", 0, 5),
+        ("Dress Lace Pink Mutiara", "Dress", 0, 5),
+        ("Blouse Ruffle Cream", "Atasan", 0, 5),
+        ("Atasan Puff Sleeve Floral Mint", "Atasan", 0, 5),
+        ("Dress Textured Khaki Sabuk", "Dress", 0, 5),
+        ("Tunik Textured Abu-abu", "Atasan", 0, 5),
+        ("Sweater Rajut Chunky Cream", "Atasan", 0, 5),
+        ("Blouse Lace Turtleneck Putih", "Atasan", 0, 5),
+        ("Trench Coat Khaki Pink Lining", "Outerwear", 0, 5),
+        ("Dress Textured Abu Tanpa Lengan", "Dress", 0, 5),
+        ("Dress Textured Beige Kancing", "Dress", 0, 5),
+        ("Dress Pinafore Aurora Taupe", "Dress", 0, 5)
     ]
     
     for nama, kat, modal, stok in data_pakaian:
         if nama not in existing:
-            # Memasukkan data dengan harga_modal = 0, harga_jual = 0
-            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) VALUES (?,?,?,?,0,0)", (nama, kat, modal, stok))
+            # Menggunakan 0 untuk harga modal, 0 untuk markup, dan NULL untuk harga jual
+            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) VALUES (?,?,?,?,0,NULL)", (nama, kat, modal, stok))
     conn.commit()
 
 tanam_data_brosur()
@@ -293,7 +307,6 @@ if pilihan == "🏠 Dashboard":
     total_stok     = c.execute("SELECT COALESCE(SUM(stok),0) FROM produk").fetchone()[0]
     total_customer = c.execute("SELECT COUNT(*) FROM customer").fetchone()[0]
     
-    # Ambil data penjualan dari KREDIT dan CASH
     terjual_kredit = c.execute("SELECT COUNT(*) FROM kredit").fetchone()[0]
     terjual_cash = c.execute("SELECT COALESCE(SUM(jumlah),0) FROM transaksi_cash").fetchone()[0]
     total_terjual = terjual_kredit + terjual_cash
@@ -305,7 +318,6 @@ if pilihan == "🏠 Dashboard":
     tgl_skrg = datetime.now().strftime("%Y-%m-%d")
     overdue_count = c.execute("SELECT COUNT(*) FROM kredit WHERE status='Berjalan' AND jatuh_tempo < ?", (tgl_skrg,)).fetchone()[0]
 
-    # Kalkulasi Pendapatan dan Laba dari Kredit + Cash
     pendapatan_kredit = c.execute("SELECT COALESCE(SUM(dp + total_hutang),0) FROM kredit").fetchone()[0]
     pendapatan_cash = c.execute("SELECT COALESCE(SUM(total_harga),0) FROM transaksi_cash").fetchone()[0]
     total_pendapatan = pendapatan_kredit + pendapatan_cash
@@ -517,6 +529,7 @@ elif pilihan == "🛒 Jual Cash":
                 jumlah_beli = st.number_input("Jumlah Beli", min_value=1, max_value=int(stok_p), value=1, step=1)
                 
                 total_belanja = harga_jual_input * jumlah_beli
+                
                 profit_satuan = harga_jual_input - mod_p
                 total_profit = profit_satuan * jumlah_beli
                 
@@ -542,6 +555,7 @@ elif pilihan == "🛒 Jual Cash":
                         st.error("❌ Transaksi gagal: Uang pembayaran kurang.")
                     else:
                         c.execute("UPDATE produk SET stok = stok - ? WHERE id = ?", (jumlah_beli, id_p))
+                        
                         c.execute('''INSERT INTO transaksi_cash (produk_id, jumlah, harga_jual_satuan, total_harga, uang_bayar, kembalian, laba, tanggal) 
                                      VALUES (?,?,?,?,?,?,?,?)''', 
                                   (id_p, jumlah_beli, harga_jual_input, total_belanja, uang_bayar, kembalian, total_profit, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -605,8 +619,10 @@ elif pilihan == "🛒 Jual Cash":
                 
                 if st.button("Hapus Transaksi Terpilih", type="primary"):
                     id_transaksi, produk_id, qty = opsi_hapus[pilih_hapus]
+                    
                     c.execute("UPDATE produk SET stok = stok + ? WHERE id = ?", (qty, produk_id))
                     c.execute("DELETE FROM transaksi_cash WHERE id = ?", (id_transaksi,))
+                    
                     conn.commit()
                     log_aksi(st.session_state.username, "HAPUS_CASH", f"ID {id_transaksi}, Kembalikan Stok {qty}")
                     flash("🗑️ Transaksi berhasil dihapus dan stok telah dikembalikan!", "success")
@@ -815,7 +831,7 @@ elif pilihan == "👥 Data Customer":
 elif pilihan == "📦 Stok Barang":
     st.markdown('<div class="main-header"><h1>📦 Real-time Stok Gudang</h1></div>', unsafe_allow_html=True)
 
-    tab1, tab2, tab3 = st.tabs(["📋 Daftar Stok", "✏️ Edit Harga Jual & Modal Pakaian", "🗑️ Edit/Hapus Produk"])
+    tab1, tab2, tab3 = st.tabs(["📋 Daftar Stok", "✏️ Edit Harga Jual Pakaian", "🗑️ Edit/Hapus Produk"])
 
     with tab1:
         df_p = pd.read_sql_query("""
@@ -857,8 +873,8 @@ elif pilihan == "📦 Stok Barang":
         st.dataframe(df_f, use_container_width=True, hide_index=True)
 
     with tab2:
-        st.markdown("### 👕 Isi Harga Modal & Harga Jual untuk Produk Pakaian")
-        st.info("Isi kolom **Harga Modal (Rp)** dan **Harga Jual (Rp)** untuk setiap produk pakaian. Klik **💾 Simpan Semua** setelah selesai.")
+        st.markdown("### 👕 Isi Harga Jual untuk Semua Produk Pakaian")
+        st.info("Isi kolom **Harga Jual (Rp)** untuk setiap produk pakaian. Kosongkan jika belum dijual. Klik **💾 Simpan Semua** setelah selesai.")
 
         placeholders = ",".join(["?"] * len(PAKAIAN_KATEGORI))
         df_pk = pd.read_sql_query(f"SELECT id, nama, kategori, harga_modal, harga_jual FROM produk WHERE kategori IN ({placeholders}) ORDER BY kategori, nama", conn, params=tuple(PAKAIAN_KATEGORI))
@@ -867,7 +883,6 @@ elif pilihan == "📦 Stok Barang":
             st.info("Belum ada produk pakaian.")
         else:
             df_edit = df_pk.copy()
-            df_edit['harga_modal'] = df_edit['harga_modal'].fillna(0).astype(float)
             df_edit['harga_jual'] = df_edit['harga_jual'].fillna(0).astype(float)
 
             edited = st.data_editor(
@@ -876,8 +891,7 @@ elif pilihan == "📦 Stok Barang":
                     "id": st.column_config.NumberColumn("ID", disabled=True, width="small"),
                     "nama": st.column_config.TextColumn("Produk", disabled=True, width="large"),
                     "kategori": st.column_config.TextColumn("Kategori", disabled=True, width="small"),
-                    # Harga Modal SEKARANG BISA DIEDIT
-                    "harga_modal": st.column_config.NumberColumn("Harga Modal (Rp)", min_value=0, step=1000, format="Rp %d", width="medium"),
+                    "harga_modal": st.column_config.NumberColumn("Modal (Rp)", disabled=True, format="Rp %d", width="medium"),
                     "harga_jual": st.column_config.NumberColumn("Harga Jual (Rp)", min_value=0, step=1000, format="Rp %d", width="medium"),
                 },
                 hide_index=True,
@@ -887,16 +901,15 @@ elif pilihan == "📦 Stok Barang":
 
             colA, colB = st.columns([1, 1])
             with colA:
-                if st.button("💾 Simpan Semua Data", key="simpan_bulk"):
+                if st.button("💾 Simpan Semua Harga Jual", key="simpan_bulk"):
                     n_updated = 0
                     for _, row in edited.iterrows():
-                        hj = row['harga_jual'] if row['harga_jual'] > 0 else 0
-                        hm = row['harga_modal'] if row['harga_modal'] > 0 else 0
-                        c.execute("UPDATE produk SET harga_jual=?, harga_modal=? WHERE id=?", (hj, hm, row['id']))
+                        hj = row['harga_jual'] if row['harga_jual'] > 0 else None
+                        c.execute("UPDATE produk SET harga_jual=? WHERE id=?", (hj, row['id']))
                         n_updated += 1
                     conn.commit()
                     log_aksi(st.session_state.username, "EDIT_HARGA_JUAL_BULK", f"{n_updated} produk")
-                    flash(f"✅ Data {n_updated} produk pakaian tersimpan!", "success")
+                    flash(f"✅ Harga jual {n_updated} produk pakaian tersimpan!", "success")
                     st.rerun()
             with colB:
                 belum = int((edited['harga_jual'] <= 0).sum())
