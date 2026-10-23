@@ -282,7 +282,12 @@ if pilihan == "🏠 Dashboard":
     total_produk   = c.execute("SELECT COUNT(*) FROM produk").fetchone()[0]
     total_stok     = c.execute("SELECT COALESCE(SUM(stok),0) FROM produk").fetchone()[0]
     total_customer = c.execute("SELECT COUNT(*) FROM customer").fetchone()[0]
-    total_terjual  = c.execute("SELECT COUNT(*) FROM kredit").fetchone()[0]
+    
+    # Ambil data penjualan dari KREDIT dan CASH
+    terjual_kredit = c.execute("SELECT COUNT(*) FROM kredit").fetchone()[0]
+    terjual_cash = c.execute("SELECT COALESCE(SUM(jumlah),0) FROM transaksi_cash").fetchone()[0]
+    total_terjual = terjual_kredit + terjual_cash
+
     kredit_aktif   = c.execute("SELECT COUNT(*) FROM kredit WHERE status='Berjalan'").fetchone()[0]
     kredit_lunas   = c.execute("SELECT COUNT(*) FROM kredit WHERE status='Lunas'").fetchone()[0]
     total_piutang  = c.execute("SELECT COALESCE(SUM(sisa_hutang),0) FROM kredit WHERE status='Berjalan'").fetchone()[0]
@@ -290,9 +295,16 @@ if pilihan == "🏠 Dashboard":
     tgl_skrg = datetime.now().strftime("%Y-%m-%d")
     overdue_count = c.execute("SELECT COUNT(*) FROM kredit WHERE status='Berjalan' AND jatuh_tempo < ?", (tgl_skrg,)).fetchone()[0]
 
-    pendapatan = c.execute("SELECT COALESCE(SUM(k.dp + k.total_hutang),0) FROM kredit k").fetchone()[0]
-    laba = c.execute("SELECT COALESCE(SUM((k.dp + k.total_hutang) - p.harga_modal),0) FROM kredit k JOIN produk p ON k.produk_id = p.id").fetchone()[0]
-    margin_persen = (laba / pendapatan * 100) if pendapatan > 0 else 0
+    # Kalkulasi Pendapatan dan Laba dari Kredit + Cash
+    pendapatan_kredit = c.execute("SELECT COALESCE(SUM(dp + total_hutang),0) FROM kredit").fetchone()[0]
+    pendapatan_cash = c.execute("SELECT COALESCE(SUM(total_harga),0) FROM transaksi_cash").fetchone()[0]
+    total_pendapatan = pendapatan_kredit + pendapatan_cash
+
+    laba_kredit = c.execute("SELECT COALESCE(SUM((k.dp + k.total_hutang) - p.harga_modal),0) FROM kredit k JOIN produk p ON k.produk_id = p.id").fetchone()[0]
+    laba_cash = c.execute("SELECT COALESCE(SUM(laba),0) FROM transaksi_cash").fetchone()[0]
+    total_laba = laba_kredit + laba_cash
+
+    margin_persen = (total_laba / total_pendapatan * 100) if total_pendapatan > 0 else 0
 
     pakaian_belum_harga = c.execute(
         f"SELECT COUNT(*) FROM produk WHERE kategori IN ({','.join(['?']*len(PAKAIAN_KATEGORI))}) "
@@ -305,7 +317,8 @@ if pilihan == "🏠 Dashboard":
     html += metric_card("👥 Customer", f"{total_customer} orang", "card-green")
     html += metric_card("💳 Kredit Aktif", f"{kredit_aktif} akun", "card-orange")
     html += metric_card("💰 Total Piutang", format_rp(total_piutang), "card-dark")
-    html += metric_card("💵 Total Laba (Kredit)", format_rp(laba), "card-green")
+    html += metric_card("💵 Total Pendapatan", format_rp(total_pendapatan), "card-blue")
+    html += metric_card("💵 Total Laba", format_rp(total_laba), "card-green")
     html += metric_card("📈 Margin Laba", f"{margin_persen:.1f}%", "card-pink")
     html += metric_card("⚠️ Overdue", f"{overdue_count} akun", "card-pink")
     html += metric_card("✅ Kredit Lunas", f"{kredit_lunas} akun", "card-green")
@@ -318,12 +331,20 @@ if pilihan == "🏠 Dashboard":
     st.markdown('<div class="section-header"><h3>📊 Analitik Penjualan</h3></div>', unsafe_allow_html=True)
     col_chart1, col_chart2 = st.columns(2)
     with col_chart1:
-        st.markdown("**🏆 Top 5 Produk Terlaris**")
-        df_top = pd.read_sql_query("SELECT p.nama, COUNT(k.id) as jumlah_terjual FROM kredit k JOIN produk p ON k.produk_id = p.id GROUP BY p.nama ORDER BY jumlah_terjual DESC LIMIT 5", conn)
+        st.markdown("**🏆 Top 5 Produk Terlaris (Kredit + Cash)**")
+        # Query Top 5 Menggabungkan Kredit dan Cash
+        df_top = pd.read_sql_query("""
+            SELECT produk, SUM(qty) as jumlah_terjual FROM (
+                SELECT p.nama as produk, 1 as qty FROM kredit k JOIN produk p ON k.produk_id = p.id
+                UNION ALL
+                SELECT p.nama as produk, t.jumlah as qty FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id
+            ) GROUP BY produk ORDER BY jumlah_terjual DESC LIMIT 5
+        """, conn)
+        
         if not df_top.empty:
             chart = alt.Chart(df_top).mark_bar(cornerRadiusTopRight=10, cornerRadiusBottomRight=10).encode(
                 x=alt.X('jumlah_terjual:Q', title='Jumlah Terjual'),
-                y=alt.Y('nama:N', sort='-x', title='Produk'),
+                y=alt.Y('produk:N', sort='-x', title='Produk'),
                 color=alt.Color('jumlah_terjual:Q', scale=alt.Scale(scheme='purples'), legend=None)
             ).properties(height=300)
             st.altair_chart(chart, use_container_width=True)
@@ -452,7 +473,7 @@ elif pilihan == "📥 Barang Masuk":
         df_in = pd.read_sql_query("SELECT t.id, p.nama as produk, t.jumlah, t.tanggal FROM transaksi_in t JOIN produk p ON t.produk_id = p.id ORDER BY t.id DESC LIMIT 20", conn)
         st.dataframe(df_in, use_container_width=True, hide_index=True)
 
-# ==================== 4. JUAL CASH (DENGAN FITUR DELETE) ====================
+# ==================== 4. JUAL CASH ====================
 elif pilihan == "🛒 Jual Cash":
     st.markdown('<div class="main-header"><h1>🛒 Kasir - Penjualan Tunai (Cash)</h1><p>Masukkan Harga Jual manual, sistem otomatis hitung profit.</p></div>', unsafe_allow_html=True)
     
@@ -518,7 +539,7 @@ elif pilihan == "🛒 Jual Cash":
                     if uang_bayar < total_belanja:
                         st.error("❌ Transaksi gagal: Uang pembayaran kurang.")
                     else:
-                        # 1. Update Stok
+                        # 1. Update Stok (Otomatis Berkurang)
                         c.execute("UPDATE produk SET stok = stok - ? WHERE id = ?", (jumlah_beli, id_p))
                         
                         # 2. Simpan Riwayat Transaksi Cash beserta Laba
@@ -573,14 +594,13 @@ elif pilihan == "🛒 Jual Cash":
             """, conn)
             
             if not df_riw_all.empty:
-                # Tampilkan Tabel (tanpa kolom ID dan produk_id agar rapi)
                 df_show = df_riw_all.drop(columns=['id', 'produk_id']).copy()
                 df_show['total_harga'] = df_show['total_harga'].apply(format_rp)
                 df_show['laba'] = df_show['laba'].apply(format_rp)
                 df_show = df_show.rename(columns={'tanggal':'Tanggal', 'produk':'Produk', 'jumlah':'Qty', 'total_harga':'Total Jual', 'laba':'Profit'})
                 st.dataframe(df_show, use_container_width=True, hide_index=True)
                 
-                # ================= FITUR DELETE TRANSAKSI CASH =================
+                # FITUR DELETE TRANSAKSI CASH
                 st.markdown("**🗑️ Hapus Transaksi & Kembalikan Stok**")
                 opsi_hapus = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah']) for _, r in df_riw_all.iterrows()}
                 pilih_hapus = st.selectbox("Pilih transaksi yang ingin dihapus:", list(opsi_hapus.keys()))
@@ -598,7 +618,6 @@ elif pilihan == "🛒 Jual Cash":
                     log_aksi(st.session_state.username, "HAPUS_CASH", f"ID {id_transaksi}, Kembalikan Stok {qty}")
                     flash("🗑️ Transaksi berhasil dihapus dan stok telah dikembalikan!", "success")
                     st.rerun()
-                # ===============================================================
             else:
                 st.write("Belum ada data.")
 
@@ -806,7 +825,14 @@ elif pilihan == "📦 Stok Barang":
     tab1, tab2, tab3 = st.tabs(["📋 Daftar Stok", "✏️ Edit Harga Jual Pakaian", "🗑️ Edit/Hapus Produk"])
 
     with tab1:
-        df_p = pd.read_sql_query("SELECT p.*, (SELECT COUNT(*) FROM kredit k WHERE k.produk_id = p.id) as terjual FROM produk p ORDER BY stok ASC", conn)
+        # Menghitung total terjual (Kredit + Cash) per produk
+        df_p = pd.read_sql_query("""
+            SELECT p.*, 
+                   ((SELECT COUNT(*) FROM kredit k WHERE k.produk_id = p.id) + 
+                    (SELECT COALESCE(SUM(jumlah), 0) FROM transaksi_cash t WHERE t.produk_id = p.id)) as terjual 
+            FROM produk p ORDER BY stok ASC
+        """, conn)
+        
         total_item   = len(df_p)
         total_unit   = df_p['stok'].sum() if not df_p.empty else 0
         total_terjual = df_p['terjual'].sum() if not df_p.empty else 0
@@ -1014,80 +1040,98 @@ elif pilihan == "📊 Laporan & Analitik":
     tab1, tab2, tab3 = st.tabs(["📈 Penjualan", "💵 Pembayaran", "📦 Stok"])
 
     with tab1:
-        df_k = pd.read_sql_query("SELECT k.id, k.total_hutang, k.dp, k.harga_cash, p.harga_modal, (k.dp + k.total_hutang) - p.harga_modal as laba, k.status, k.jatuh_tempo, p.nama as produk FROM kredit k JOIN produk p ON k.produk_id = p.id", conn)
-        if not df_k.empty:
-            total_pendapatan = df_k['dp'].sum() + df_k['total_hutang'].sum()
-            total_laba = df_k['laba'].sum()
-            margin = (total_laba / total_pendapatan * 100) if total_pendapatan > 0 else 0
+        # Gabungkan Pendapatan & Laba dari Kredit dan Cash
+        df_kredit = pd.read_sql_query("SELECT total_hutang, dp, harga_modal, (dp + total_hutang) - harga_modal as laba FROM kredit k JOIN produk p ON k.produk_id = p.id", conn)
+        df_cash = pd.read_sql_query("SELECT total_harga as pendapatan, laba FROM transaksi_cash", conn)
+        
+        tot_pen_kredit = df_kredit['dp'].sum() + df_kredit['total_hutang'].sum() if not df_kredit.empty else 0
+        tot_laba_kredit = df_kredit['laba'].sum() if not df_kredit.empty else 0
+        
+        tot_pen_cash = df_cash['pendapatan'].sum() if not df_cash.empty else 0
+        tot_laba_cash = df_cash['laba'].sum() if not df_cash.empty else 0
+        
+        total_transaksi = len(df_kredit) + len(df_cash)
+        total_pendapatan = tot_pen_kredit + tot_pen_cash
+        total_laba = tot_laba_kredit + tot_laba_cash
+        margin = (total_laba / total_pendapatan * 100) if total_pendapatan > 0 else 0
 
-            html = '<div class="metric-grid">'
-            html += metric_card("Total Transaksi", f"{len(df_k)}", "card-blue")
-            html += metric_card("Total Pendapatan", format_rp(total_pendapatan), "card-purple")
-            html += metric_card("Total Laba", format_rp(total_laba), "card-green")
-            html += metric_card("Margin Profit", f"{margin:.1f}%", "card-orange")
-            html += '</div>'
-            st.markdown(html, unsafe_allow_html=True)
+        html = '<div class="metric-grid">'
+        html += metric_card("Total Transaksi", f"{total_transaksi}", "card-blue")
+        html += metric_card("Total Pendapatan", format_rp(total_pendapatan), "card-purple")
+        html += metric_card("Total Laba", format_rp(total_laba), "card-green")
+        html += metric_card("Margin Profit", f"{margin:.1f}%", "card-orange")
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)
 
-            st.markdown("**🏆 Distribusi Laba per Produk**")
-            df_g = df_k.groupby('produk')['laba'].sum().reset_index().sort_values('laba', ascending=False).head(10)
+        st.markdown("**🏆 Distribusi Laba per Produk**")
+        # Query Laba per Produk (Gabungan Kredit & Cash)
+        df_g = pd.read_sql_query("""
+            SELECT produk, SUM(laba) as total_laba FROM (
+                SELECT p.nama as produk, ((k.dp + k.total_hutang) - p.harga_modal) as laba 
+                FROM kredit k JOIN produk p ON k.produk_id = p.id
+                UNION ALL
+                SELECT p.nama as produk, t.laba as laba 
+                FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id
+            ) GROUP BY produk ORDER BY total_laba DESC LIMIT 10
+        """, conn)
+        
+        if not df_g.empty:
             chart = alt.Chart(df_g).mark_bar(cornerRadiusTopRight=8, cornerRadiusBottomRight=8).encode(
-                x=alt.X('laba:Q', title='Laba (Rp)'), y=alt.Y('produk:N', sort='-x', title=''),
-                color=alt.Color('laba:Q', scale=alt.Scale(scheme='reds'), legend=None)
+                x=alt.X('total_laba:Q', title='Laba (Rp)'), y=alt.Y('produk:N', sort='-x', title=''),
+                color=alt.Color('total_laba:Q', scale=alt.Scale(scheme='reds'), legend=None)
             ).properties(height=400)
             st.altair_chart(chart, use_container_width=True)
 
-            st.markdown('<div class="section-header"><h3>✏️ Edit / Hapus Transaksi Terjual (Kredit)</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"><h3>✏️ Edit / Hapus Transaksi Terjual (Kredit)</h3></div>', unsafe_allow_html=True)
+        
+        df_kredit_all = pd.read_sql_query("""
+            SELECT k.id, c.nama as customer, p.nama as produk, k.harga_cash, k.dp, 
+                   k.total_hutang, k.sisa_hutang, k.status, k.jatuh_tempo, k.tenor, k.cicilan_bulan
+            FROM kredit k 
+            JOIN customer c ON k.customer_id = c.id 
+            JOIN produk p ON k.produk_id = p.id
+            ORDER BY k.id DESC
+        """, conn)
+        st.dataframe(df_kredit_all, use_container_width=True, hide_index=True)
+
+        opsi_kredit = {f"#{r['id']} - {r['customer']} - {r['produk']} ({r['status']})": r['id'] for _, r in df_kredit_all.iterrows()}
+        pilih_kredit = st.selectbox("🔍 Pilih Transaksi Terjual", list(opsi_kredit.keys()))
+        kid_edit = opsi_kredit[pilih_kredit]
+        detail_k = df_kredit_all[df_kredit_all['id'] == kid_edit].iloc[0]
+
+        with st.form("form_edit_kredit"):
+            c1, c2 = st.columns(2)
+            with c1:
+                e_status = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(detail_k['status']) if detail_k['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
+                e_jatuh_tempo = st.date_input("Jatuh Tempo", value=pd.to_datetime(detail_k['jatuh_tempo']).date())
+                e_total = st.number_input("Total Hutang (Rp)", value=float(detail_k['total_hutang']), step=10000.0)
+            with c2:
+                e_sisa = st.number_input("Sisa Hutang (Rp)", value=float(detail_k['sisa_hutang']), step=10000.0)
+                e_cicilan = st.number_input("Cicilan/Bulan (Rp)", value=float(detail_k['cicilan_bulan']), step=10000.0)
+                e_tenor = st.number_input("Tenor (Bulan)", value=int(detail_k['tenor']), step=1)
             
-            df_kredit_all = pd.read_sql_query("""
-                SELECT k.id, c.nama as customer, p.nama as produk, k.harga_cash, k.dp, 
-                       k.total_hutang, k.sisa_hutang, k.status, k.jatuh_tempo, k.tenor, k.cicilan_bulan
-                FROM kredit k 
-                JOIN customer c ON k.customer_id = c.id 
-                JOIN produk p ON k.produk_id = p.id
-                ORDER BY k.id DESC
-            """, conn)
-            st.dataframe(df_kredit_all, use_container_width=True, hide_index=True)
+            st.info("⚠️ **Perhatian:** Menghapus transaksi terjual akan mengembalikan stok produk (+1) dan **menghapus semua riwayat pembayaran** untuk transaksi ini.")
+            
+            btn_edit = st.form_submit_button("💾 Simpan Perubahan")
+            btn_hapus = st.form_submit_button("🗑️ Hapus Transaksi (Kembalikan Stok)")
 
-            opsi_kredit = {f"#{r['id']} - {r['customer']} - {r['produk']} ({r['status']})": r['id'] for _, r in df_kredit_all.iterrows()}
-            pilih_kredit = st.selectbox("🔍 Pilih Transaksi Terjual", list(opsi_kredit.keys()))
-            kid_edit = opsi_kredit[pilih_kredit]
-            detail_k = df_kredit_all[df_kredit_all['id'] == kid_edit].iloc[0]
+            if btn_edit:
+                if e_status == "Lunas": e_sisa = 0.0
+                c.execute("""UPDATE kredit SET status=?, jatuh_tempo=?, total_hutang=?, sisa_hutang=?, cicilan_bulan=?, tenor=? WHERE id=?""",
+                          (e_status, e_jatuh_tempo.strftime("%Y-%m-%d"), e_total, e_sisa, e_cicilan, e_tenor, kid_edit))
+                conn.commit()
+                log_aksi(st.session_state.username, "EDIT_KREDIT", f"ID {kid_edit}")
+                flash("✅ Transaksi terjual berhasil diupdate!", "success")
+                st.rerun()
 
-            with st.form("form_edit_kredit"):
-                c1, c2 = st.columns(2)
-                with c1:
-                    e_status = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(detail_k['status']) if detail_k['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
-                    e_jatuh_tempo = st.date_input("Jatuh Tempo", value=pd.to_datetime(detail_k['jatuh_tempo']).date())
-                    e_total = st.number_input("Total Hutang (Rp)", value=float(detail_k['total_hutang']), step=10000.0)
-                with c2:
-                    e_sisa = st.number_input("Sisa Hutang (Rp)", value=float(detail_k['sisa_hutang']), step=10000.0)
-                    e_cicilan = st.number_input("Cicilan/Bulan (Rp)", value=float(detail_k['cicilan_bulan']), step=10000.0)
-                    e_tenor = st.number_input("Tenor (Bulan)", value=int(detail_k['tenor']), step=1)
-                
-                st.info("⚠️ **Perhatian:** Menghapus transaksi terjual akan mengembalikan stok produk (+1) dan **menghapus semua riwayat pembayaran** untuk transaksi ini.")
-                
-                btn_edit = st.form_submit_button("💾 Simpan Perubahan")
-                btn_hapus = st.form_submit_button("🗑️ Hapus Transaksi (Kembalikan Stok)")
-
-                if btn_edit:
-                    if e_status == "Lunas": e_sisa = 0.0
-                    c.execute("""UPDATE kredit SET status=?, jatuh_tempo=?, total_hutang=?, sisa_hutang=?, cicilan_bulan=?, tenor=? WHERE id=?""",
-                              (e_status, e_jatuh_tempo.strftime("%Y-%m-%d"), e_total, e_sisa, e_cicilan, e_tenor, kid_edit))
-                    conn.commit()
-                    log_aksi(st.session_state.username, "EDIT_KREDIT", f"ID {kid_edit}")
-                    flash("✅ Transaksi terjual berhasil diupdate!", "success")
-                    st.rerun()
-
-                if btn_hapus:
-                    c.execute("UPDATE produk SET stok = stok + 1 WHERE id = (SELECT produk_id FROM kredit WHERE id=?)", (kid_edit,))
-                    c.execute("DELETE FROM pembayaran WHERE kredit_id=?", (kid_edit,))
-                    c.execute("DELETE FROM kredit WHERE id=?", (kid_edit,))
-                    conn.commit()
-                    log_aksi(st.session_state.username, "HAPUS_KREDIT", f"ID {kid_edit}")
-                    flash("🗑️ Transaksi dihapus, stok dikembalikan, dan riwayat pembayaran dibersihkan!", "success")
-                    st.rerun()
-        else:
-            st.info("Belum ada data penjualan")
+            if btn_hapus:
+                c.execute("UPDATE produk SET stok = stok + 1 WHERE id = (SELECT produk_id FROM kredit WHERE id=?)", (kid_edit,))
+                c.execute("DELETE FROM pembayaran WHERE kredit_id=?", (kid_edit,))
+                c.execute("DELETE FROM kredit WHERE id=?", (kid_edit,))
+                conn.commit()
+                log_aksi(st.session_state.username, "HAPUS_KREDIT", f"ID {kid_edit}")
+                flash("🗑️ Transaksi dihapus, stok dikembalikan, dan riwayat pembayaran dibersihkan!", "success")
+                st.rerun()
 
     with tab2:
         df_b = pd.read_sql_query("""
@@ -1171,18 +1215,26 @@ elif pilihan == "👕 Modal vs Profit":
         opsi_kat = ["Semua"] + kat_tersedia
         kat_pilih = st.selectbox("🏷️ Filter Kategori", opsi_kat, index=opsi_kat.index(default_kat))
 
+        # Subquery untuk menggabungkan pendapatan Kredit dan Cash per produk
         q_base = """
             SELECT p.id, p.nama, p.kategori, p.harga_modal, COALESCE(p.markup_persen, 5) as markup_persen, p.stok, p.harga_jual,
-                   COALESCE(SUM(k.dp + k.total_hutang), 0) as total_revenue, COUNT(k.id) as terjual
-            FROM produk p LEFT JOIN kredit k ON k.produk_id = p.id
+                   (
+                       COALESCE((SELECT SUM(k.dp + k.total_hutang) FROM kredit k WHERE k.produk_id = p.id), 0) +
+                       COALESCE((SELECT SUM(t.total_harga) FROM transaksi_cash t WHERE t.produk_id = p.id), 0)
+                   ) as total_revenue,
+                   (
+                       (SELECT COUNT(*) FROM kredit k WHERE k.produk_id = p.id) +
+                       COALESCE((SELECT SUM(t.jumlah) FROM transaksi_cash t WHERE t.produk_id = p.id), 0)
+                   ) as terjual
+            FROM produk p
         """
         if kat_pilih == "Semua":
-            df_data = pd.read_sql_query(q_base + " GROUP BY p.id ORDER BY p.kategori, p.nama", conn)
+            df_data = pd.read_sql_query(q_base + " ORDER BY p.kategori, p.nama", conn)
         elif kat_pilih == "Pakaian":
             placeholders = ",".join(["?"] * len(PAKAIAN_KATEGORI))
-            df_data = pd.read_sql_query(q_base + f" WHERE p.kategori IN ({placeholders}) GROUP BY p.id ORDER BY p.kategori, p.nama", conn, params=tuple(PAKAIAN_KATEGORI))
+            df_data = pd.read_sql_query(q_base + f" WHERE p.kategori IN ({placeholders}) ORDER BY p.kategori, p.nama", conn, params=tuple(PAKAIAN_KATEGORI))
         else:
-            df_data = pd.read_sql_query(q_base + " WHERE p.kategori = ? GROUP BY p.id ORDER BY p.nama", conn, params=(kat_pilih,))
+            df_data = pd.read_sql_query(q_base + " WHERE p.kategori = ? ORDER BY p.nama", conn, params=(kat_pilih,))
 
         df_data['harga_modal'] = df_data['harga_modal'].fillna(0)
         df_data['markup_persen'] = df_data['markup_persen'].fillna(5)
