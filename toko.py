@@ -452,7 +452,7 @@ elif pilihan == "📥 Barang Masuk":
         df_in = pd.read_sql_query("SELECT t.id, p.nama as produk, t.jumlah, t.tanggal FROM transaksi_in t JOIN produk p ON t.produk_id = p.id ORDER BY t.id DESC LIMIT 20", conn)
         st.dataframe(df_in, use_container_width=True, hide_index=True)
 
-# ==================== 4. JUAL CASH (REVISI: INPUT HARGA JUAL MANUAL & HITUNG PROFIT) ====================
+# ==================== 4. JUAL CASH (DENGAN FITUR DELETE) ====================
 elif pilihan == "🛒 Jual Cash":
     st.markdown('<div class="main-header"><h1>🛒 Kasir - Penjualan Tunai (Cash)</h1><p>Masukkan Harga Jual manual, sistem otomatis hitung profit.</p></div>', unsafe_allow_html=True)
     
@@ -567,15 +567,38 @@ elif pilihan == "🛒 Jual Cash":
                 
             st.markdown('<div class="section-header"><h3>📜 Riwayat Jual Cash (5 Terakhir)</h3></div>', unsafe_allow_html=True)
             df_riw_all = pd.read_sql_query("""
-                SELECT t.tanggal, p.nama as produk, t.jumlah, t.total_harga, t.laba 
+                SELECT t.id, t.produk_id, t.tanggal, p.nama as produk, t.jumlah, t.total_harga, t.laba 
                 FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id 
                 ORDER BY t.id DESC LIMIT 5
             """, conn)
+            
             if not df_riw_all.empty:
-                df_riw_all['total_harga'] = df_riw_all['total_harga'].apply(format_rp)
-                df_riw_all['laba'] = df_riw_all['laba'].apply(format_rp)
-                df_riw_all = df_riw_all.rename(columns={'tanggal':'Tanggal', 'produk':'Produk', 'jumlah':'Qty', 'total_harga':'Total Jual', 'laba':'Profit'})
-                st.dataframe(df_riw_all, use_container_width=True, hide_index=True)
+                # Tampilkan Tabel (tanpa kolom ID dan produk_id agar rapi)
+                df_show = df_riw_all.drop(columns=['id', 'produk_id']).copy()
+                df_show['total_harga'] = df_show['total_harga'].apply(format_rp)
+                df_show['laba'] = df_show['laba'].apply(format_rp)
+                df_show = df_show.rename(columns={'tanggal':'Tanggal', 'produk':'Produk', 'jumlah':'Qty', 'total_harga':'Total Jual', 'laba':'Profit'})
+                st.dataframe(df_show, use_container_width=True, hide_index=True)
+                
+                # ================= FITUR DELETE TRANSAKSI CASH =================
+                st.markdown("**🗑️ Hapus Transaksi & Kembalikan Stok**")
+                opsi_hapus = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah']) for _, r in df_riw_all.iterrows()}
+                pilih_hapus = st.selectbox("Pilih transaksi yang ingin dihapus:", list(opsi_hapus.keys()))
+                
+                if st.button("Hapus Transaksi Terpilih", type="primary"):
+                    id_transaksi, produk_id, qty = opsi_hapus[pilih_hapus]
+                    
+                    # 1. Kembalikan stok
+                    c.execute("UPDATE produk SET stok = stok + ? WHERE id = ?", (qty, produk_id))
+                    
+                    # 2. Hapus dari tabel transaksi_cash
+                    c.execute("DELETE FROM transaksi_cash WHERE id = ?", (id_transaksi,))
+                    
+                    conn.commit()
+                    log_aksi(st.session_state.username, "HAPUS_CASH", f"ID {id_transaksi}, Kembalikan Stok {qty}")
+                    flash("🗑️ Transaksi berhasil dihapus dan stok telah dikembalikan!", "success")
+                    st.rerun()
+                # ===============================================================
             else:
                 st.write("Belum ada data.")
 
