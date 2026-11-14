@@ -1207,11 +1207,11 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         for row in schedule:
             rows_html += f"""
                 <tr>
-                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:center;">{row['ke']}</td>
-                    <td style="padding:8px; border-bottom:1px solid #ddd;">{row['jatuh_tempo']}</td>
-                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['angsuran'])}</td>
-                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['sisa'])}</td>
-                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:center;">{row['status']}</td>
+                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:center;">{row['ke']}</td>
+                    <td style="padding:4px 5px; border-bottom:1px solid #ddd;">{row['jatuh_tempo']}</td>
+                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['angsuran'])}</td>
+                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['sisa'])}</td>
+                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:center;">{row['status']}</td>
                 </tr>
             """
 
@@ -1223,22 +1223,42 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <meta charset="utf-8">
             <title>Invoice Kredit - GRACE'S STORE</title>
             <style>
-                body {{ font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: auto; color: #000; }}
-                h2 {{ text-align: center; margin-bottom: 5px; text-transform: uppercase; }}
-                .header-info {{ text-align: center; margin-bottom: 20px; font-size: 12px; }}
-                .box {{ border: 1px solid #000; padding: 15px; margin-bottom: 20px; border-radius: 5px; }}
-                .box-title {{ font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 10px; }}
-                table {{ width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 15px; }}
-                th {{ background-color: #e0e0e0; padding: 8px; text-align: left; border-bottom: 2px solid #000; }}
-                td {{ padding: 6px 8px; border-bottom: 1px dashed #ccc; }}
+                /* Tampilan Web Preview */
+                body {{ font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: auto; color: #000; font-size: 13px; }}
+                h2 {{ text-align: center; margin-bottom: 5px; text-transform: uppercase; font-size: 18px; }}
+                .header-info {{ text-align: center; margin-bottom: 15px; font-size: 11px; }}
+                .box {{ border: 1px solid #000; padding: 10px; margin-bottom: 10px; border-radius: 5px; }}
+                .box-title {{ font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 3px; margin-bottom: 5px; font-size: 12px; }}
+                table {{ width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 10px; }}
+                th {{ background-color: #e0e0e0; padding: 5px; text-align: left; border-bottom: 2px solid #000; }}
+                td {{ padding: 4px 5px; border-bottom: 1px dashed #ccc; }}
                 .right {{ text-align: right; }}
                 .center {{ text-align: center; }}
                 .bold {{ font-weight: bold; }}
-                .signature {{ display: flex; justify-content: space-between; margin-top: 40px; text-align: center; }}
-                .signature div {{ width: 40%; border-top: 1px solid #000; padding-top: 10px; }}
-                .footer-terms {{ margin-top: 20px; font-size: 11px; background-color: #f9f9f9; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }}
+                .footer-terms {{ margin-top: 10px; font-size: 10px; background-color: #f9f9f9; padding: 8px; border-radius: 5px; border: 1px solid #ccc; }}
+                .signature {{ display: flex; justify-content: space-between; margin-top: 20px; text-align: center; font-size: 12px; }}
+                .signature div {{ width: 40%; border-top: 1px solid #000; padding-top: 5px; }}
+
+                /* Pengaturan Cetak (1 Halaman A4) */
                 @media print {{
-                    body {{ padding: 0; }}
+                    @page {{
+                        size: A4 portrait;
+                        margin: 10mm; /* Margin kertas minimal */
+                    }}
+                    body {{
+                        padding: 0;
+                        margin: 0;
+                        font-size: 10px; /* Perkecil font saat cetak */
+                    }}
+                    h2 {{ font-size: 16px; margin-bottom: 2px; }}
+                    .header-info {{ font-size: 9px; margin-bottom: 10px; }}
+                    .box {{ padding: 6px; margin-bottom: 6px; page-break-inside: avoid; }}
+                    .box-title {{ font-size: 10px; margin-bottom: 3px; padding-bottom: 2px; }}
+                    table {{ font-size: 9px; margin-bottom: 6px; page-break-inside: avoid; }}
+                    th {{ padding: 3px; }}
+                    td {{ padding: 2px 4px; }}
+                    .footer-terms {{ font-size: 9px; padding: 5px; margin-top: 5px; page-break-inside: avoid; }}
+                    .signature {{ margin-top: 15px; font-size: 10px; page-break-inside: avoid; }}
                     .no-print {{ display: none; }}
                 }}
             </style>
@@ -1357,7 +1377,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <div>Customer (Penerima)</div>
             </div>
             
-            <p class="center" style="font-size: 10px; margin-top: 30px; color: #555;">
+            <p class="center" style="font-size: 10px; margin-top: 15px; color: #555;">
                 Slip ini adalah bukti sah akad kredit GRACE'S STORE.<br>
                 Simpan slip ini untuk keperluan pembayaran angsuran selanjutnya.
             </p>
@@ -1394,7 +1414,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </body>
             </html>
             """,
-            height=800,
+            height=1000,
             scrolling=True
         )
         
