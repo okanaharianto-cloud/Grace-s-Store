@@ -62,7 +62,7 @@ DB_PATH = os.path.join(os.getcwd(), "toko_kredit.db")
 @st.cache_resource
 def get_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")   # lebih tahan crash
+    conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
@@ -91,6 +91,9 @@ c.execute('''CREATE TABLE IF NOT EXISTS users
               nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
 c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas
              (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
+# ==================== TABEL PENGATURAN (BARU) ====================
+c.execute('''CREATE TABLE IF NOT EXISTS pengaturan
+             (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
 conn.commit()
 
 # ==================== MIGRASI KOLOM ====================
@@ -106,12 +109,23 @@ for sql in [
     except sqlite3.OperationalError:
         pass
 
-# Isi tanggal_kredit lama (approx: jatuh_tempo - 30 hari) jika masih NULL
 try:
     c.execute("UPDATE kredit SET tanggal_kredit = date(jatuh_tempo, '-30 days') WHERE tanggal_kredit IS NULL")
     conn.commit()
 except Exception:
     pass
+
+# ==================== SEED PENGATURAN DEFAULT ====================
+DEFAULT_PENGATURAN = {
+    "markup_default_persen":     ("5.0",   "Markup default (%) untuk produk non-pakaian"),
+    "bunga_flat_6bln_persen":    ("40.0",  "Bunga flat per 6 bulan (%) untuk kredit"),
+    "dp_minimal_persen":         ("20.0",  "DP minimal (%) dari harga cash"),
+    "denda_per_hari_persen":     ("1.0",   "Denda keterlambatan per hari (%) dari cicilan"),
+    "tenor_options":             ("1,2,3,6,12,18,24", "Pilihan tenor (bulan), pisahkan dengan koma"),
+}
+for k, (v, ket) in DEFAULT_PENGATURAN.items():
+    c.execute("INSERT OR IGNORE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)", (k, v, ket))
+conn.commit()
 
 # ==================== HELPER FUNCTIONS ====================
 def hash_password(p):
@@ -122,6 +136,36 @@ def format_rp(n):
         return f"Rp {float(n):,.0f}".replace(",", ".")
     except Exception:
         return "Rp 0"
+
+def get_pengaturan(kunci, default=None):
+    """Ambil nilai pengaturan dari DB (cache di session)."""
+    cache_key = f"_setting_{kunci}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    row = c.execute("SELECT nilai FROM pengaturan WHERE kunci=?", (kunci,)).fetchone()
+    val = row[0] if row else default
+    st.session_state[cache_key] = val
+    return val
+
+def get_pengaturan_float(kunci, default=0.0):
+    try:
+        return float(get_pengaturan(kunci, default))
+    except (ValueError, TypeError):
+        return float(default)
+
+def get_tenor_list():
+    raw = get_pengaturan("tenor_options", "1,2,3,6,12,18,24")
+    try:
+        return [int(x.strip()) for x in raw.split(",") if x.strip()]
+    except Exception:
+        return [1, 2, 3, 6, 12, 18, 24]
+
+def set_pengaturan(kunci, nilai, keterangan=None):
+    c.execute("INSERT OR REPLACE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)",
+              (kunci, str(nilai), keterangan or ""))
+    conn.commit()
+    # Invalidasi cache
+    st.session_state.pop(f"_setting_{kunci}", None)
 
 def log_aksi(username, aksi, detail=""):
     try:
@@ -150,10 +194,10 @@ def show_flash():
 def hitung_harga_cash(harga_modal, markup_persen, harga_jual):
     if harga_jual and float(harga_jual) > 0:
         return float(harga_jual)
-    return round(float(harga_modal) * (1 + float(markup_persen or 5) / 100), -2)
+    mk = markup_persen if markup_persen is not None else get_pengaturan_float("markup_default_persen", 5.0)
+    return round(float(harga_modal) * (1 + float(mk) / 100), -2)
 
 def recalculate_kredit(kredit_id):
-    """Hitung ulang sisa hutang jika pembayaran diedit/dihapus"""
     row = c.execute("SELECT total_hutang FROM kredit WHERE id=?", (kredit_id,)).fetchone()
     if not row: return
     total_hutang = row[0]
@@ -164,12 +208,13 @@ def recalculate_kredit(kredit_id):
     new_status = "Lunas" if new_sisa <= 0 else "Berjalan"
     c.execute("UPDATE kredit SET sisa_hutang=?, status=? WHERE id=?", (new_sisa, new_status, kredit_id))
 
+def hitung_denda(cicilan_bulan, hari_telat):
+    persen = get_pengaturan_float("denda_per_hari_persen", 1.0)
+    if hari_telat <= 0:
+        return 0.0
+    return round(cicilan_bulan * (persen / 100) * hari_telat, -2)
+
 def build_jadwal_angsuran(total_hutang, cicilan_bulan, tenor, tanggal_kredit_str):
-    """
-    Bangun jadwal angsuran lengkap dari awal kredit.
-    - Angsuran ke-1..N-1 = cicilan_bulan
-    - Angsuran ke-N = sisa terakhir (menyesuaikan pembulatan)
-    """
     try:
         tgl = datetime.strptime(tanggal_kredit_str, "%Y-%m-%d")
     except Exception:
@@ -311,7 +356,7 @@ with st.sidebar:
         "🛒 Jual Cash", 
         "📤 Kredit Baru",
         "💰 Pembayaran Cicilan", 
-        "🖨️ Cetak Slip Kredit",   # ← NEW
+        "🖨️ Cetak Slip Kredit",
         "👥 Data Customer", 
         "📦 Stok Barang",
         "🚨 Overdue & Denda", 
@@ -321,7 +366,7 @@ with st.sidebar:
         "💾 Backup, Cetak & Impor",
     ]
     if st.session_state.role == "admin":
-        menu_list.extend(["👤 Manajemen User", "📝 Log Aktivitas"])
+        menu_list.extend(["⚙️ Pengaturan Owner", "👤 Manajemen User", "📝 Log Aktivitas"])
 
     pilihan = st.selectbox("📋 Menu", menu_list)
     st.markdown("---")
@@ -332,12 +377,176 @@ with st.sidebar:
         st.session_state.pop("flash", None)
         st.session_state.pop("balloons", None)
         st.session_state.pop("snow", None)
+        # Bersihkan cache pengaturan
+        for k in list(st.session_state.keys()):
+            if k.startswith("_setting_"):
+                st.session_state.pop(k, None)
         st.rerun()
 
 show_flash()
 
+# ==================== 0. PENGATURAN OWNER (BARU) ====================
+if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
+    st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase & parameter toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
+
+    st.info("💡 **Perubahan pengaturan berlaku untuk transaksi BARU.** Transaksi lama tetap memakai nilai saat dibuat (tidak diubah).")
+
+    # ========== SECTION 1: MARKUP ==========
+    st.markdown('<div class="section-header"><h3>💰 Markup / Margin Default</h3></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        markup_val = st.number_input(
+            "Markup default untuk produk **non-pakaian** (%)",
+            min_value=0.0, max_value=500.0,
+            value=get_pengaturan_float("markup_default_persen", 5.0),
+            step=1.0,
+            help="Dipakai saat input produk baru non-pakaian. Pakaian pakai harga jual manual."
+        )
+        contoh_modal = 1000000
+        st.caption(f"Contoh: Modal {format_rp(contoh_modal)} → Harga Cash otomatis **{format_rp(round(contoh_modal * (1 + markup_val/100), -2))}**")
+    with col2:
+        st.metric("Markup Saat Ini", f"{get_pengaturan_float('markup_default_persen', 5.0):.1f}%")
+    if st.button("💾 Simpan Markup", key="save_markup"):
+        try:
+            set_pengaturan("markup_default_persen", f"{markup_val:.2f}")
+            log_aksi(st.session_state.username, "SET_MARKUP", f"{markup_val}%")
+            flash(f"✅ Markup default diubah ke **{markup_val:.1f}%**", "success")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal: {e}")
+
+    # ========== SECTION 2: BUNGA KREDIT ==========
+    st.markdown('<div class="section-header"><h3>💳 Bunga Kredit</h3></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        bunga_val = st.number_input(
+            "Bunga flat per **6 bulan** (%)",
+            min_value=0.0, max_value=200.0,
+            value=get_pengaturan_float("bunga_flat_6bln_persen", 40.0),
+            step=1.0,
+            help="Bunga dihitung proporsional: tenor 3 bln = setengah, tenor 12 bln = dua kali nilai ini."
+        )
+        # Simulasi
+        cicilan_sim = 5000000
+        for t_sim in [3, 6, 12]:
+            rate = (bunga_val / 100) / 6
+            bunga_total = rate * t_sim
+            total_sim = round(cicilan_sim * (1 + bunga_total), -2)
+            st.caption(f"• Tenor {t_sim} bln → bunga total {bunga_total*100:.1f}% → hutang **{format_rp(total_sim)}** (cicilan {format_rp(total_sim/t_sim)})")
+    with col2:
+        st.metric("Bunga Saat Ini", f"{get_pengaturan_float('bunga_flat_6bln_persen', 40.0):.1f}%")
+    if st.button("💾 Simpan Bunga", key="save_bunga"):
+        try:
+            set_pengaturan("bunga_flat_6bln_persen", f"{bunga_val:.2f}")
+            log_aksi(st.session_state.username, "SET_BUNGA", f"{bunga_val}%")
+            flash(f"✅ Bunga flat 6 bulan diubah ke **{bunga_val:.1f}%**", "success")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal: {e}")
+
+    # ========== SECTION 3: DP MINIMAL ==========
+    st.markdown('<div class="section-header"><h3>🪙 DP Minimal</h3></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        dp_val = st.number_input(
+            "DP minimal (% dari harga cash)",
+            min_value=0.0, max_value=100.0,
+            value=get_pengaturan_float("dp_minimal_persen", 20.0),
+            step=1.0,
+            help="Batas bawah DP yang wajib dibayar customer saat akad kredit."
+        )
+        st.caption(f"Contoh: Harga cash Rp 10.000.000 → DP minimal **{format_rp(round(10000000 * dp_val/100, -2))}**")
+    with col2:
+        st.metric("DP Saat Ini", f"{get_pengaturan_float('dp_minimal_persen', 20.0):.1f}%")
+    if st.button("💾 Simpan DP", key="save_dp"):
+        try:
+            set_pengaturan("dp_minimal_persen", f"{dp_val:.2f}")
+            log_aksi(st.session_state.username, "SET_DP", f"{dp_val}%")
+            flash(f"✅ DP minimal diubah ke **{dp_val:.1f}%**", "success")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal: {e}")
+
+    # ========== SECTION 4: DENDA ==========
+    st.markdown('<div class="section-header"><h3>⏰ Denda Keterlambatan</h3></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        denda_val = st.number_input(
+            "Denda per hari telat (% dari cicilan)",
+            min_value=0.0, max_value=20.0,
+            value=get_pengaturan_float("denda_per_hari_persen", 1.0),
+            step=0.1,
+            format="%.2f",
+            help="Contoh: cicilan Rp 1.000.000 × 1%/hari × 5 hari telat = Rp 50.000 denda."
+        )
+        st.caption(f"Simulasi: cicilan Rp 1.000.000, telat 5 hari → denda **{format_rp(round(1000000 * (denda_val/100) * 5, -2))}**")
+    with col2:
+        st.metric("Denda Saat Ini", f"{get_pengaturan_float('denda_per_hari_persen', 1.0):.2f}% / hari")
+    if st.button("💾 Simpan Denda", key="save_denda"):
+        try:
+            set_pengaturan("denda_per_hari_persen", f"{denda_val:.2f}")
+            log_aksi(st.session_state.username, "SET_DENDA", f"{denda_val}%")
+            flash(f"✅ Denda diubah ke **{denda_val:.2f}% per hari**", "success")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal: {e}")
+
+    # ========== SECTION 5: TENOR ==========
+    st.markdown('<div class="section-header"><h3>📅 Pilihan Tenor</h3></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        tenor_val = st.text_input(
+            "Pilihan tenor (bulan, pisahkan dengan koma)",
+            value=get_pengaturan("tenor_options", "1,2,3,6,12,18,24"),
+            help="Contoh: 1,2,3,6,12,18,24 — akan muncul di dropdown tenor."
+        )
+        try:
+            parsed = [int(x.strip()) for x in tenor_val.split(",") if x.strip()]
+            st.caption(f"✅ Terdeteksi {len(parsed)} pilihan tenor: {parsed}")
+        except Exception:
+            st.caption("⚠️ Format tidak valid — akan fallback ke default 1,2,3,6,12,18,24")
+    with col2:
+        st.metric("Tenor Saat Ini", get_pengaturan("tenor_options", "1,2,3,6,12,18,24"))
+    if st.button("💾 Simpan Tenor", key="save_tenor"):
+        try:
+            _ = [int(x.strip()) for x in tenor_val.split(",") if x.strip()]
+            set_pengaturan("tenor_options", tenor_val)
+            log_aksi(st.session_state.username, "SET_TENOR", tenor_val)
+            flash(f"✅ Pilihan tenor diubah ke **{tenor_val}**", "success")
+            st.rerun()
+        except Exception:
+            st.error("❌ Format tenor tidak valid. Gunakan angka dipisah koma, contoh: 1,3,6,12")
+
+    # ========== SECTION 6: RESET ==========
+    st.markdown('<div class="section-header"><h3>🔄 Reset ke Default</h3></div>', unsafe_allow_html=True)
+    st.warning("⚠️ Tombol ini akan mengembalikan **semua** pengaturan ke nilai default pabrik. Transaksi & produk tidak terpengaruh.")
+    if st.button("🔄 Reset Semua Pengaturan ke Default"):
+        try:
+            for k, (v, ket) in DEFAULT_PENGATURAN.items():
+                set_pengaturan(k, v, ket)
+            log_aksi(st.session_state.username, "RESET_PENGATURAN", "Semua ke default")
+            flash("✅ Semua pengaturan dikembalikan ke default!", "success")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal: {e}")
+
+    # ========== RINGKASAN ==========
+    st.markdown('<div class="section-header"><h3>📋 Ringkasan Pengaturan Aktif</h3></div>', unsafe_allow_html=True)
+    df_set = pd.read_sql_query("SELECT kunci, nilai, keterangan FROM pengaturan ORDER BY kunci", conn)
+    st.dataframe(df_set, use_container_width=True, hide_index=True)
+
+    with st.expander("📜 Log Perubahan Pengaturan"):
+        df_log_set = pd.read_sql_query(
+            "SELECT waktu, username, aksi, detail FROM log_aktivitas WHERE aksi LIKE 'SET_%' OR aksi='RESET_PENGATURAN' ORDER BY id DESC LIMIT 50",
+            conn
+        )
+        if not df_log_set.empty:
+            st.dataframe(df_log_set, use_container_width=True, hide_index=True)
+        else:
+            st.info("Belum ada perubahan pengaturan.")
+
 # ==================== 1. DASHBOARD ====================
-if pilihan == "🏠 Dashboard":
+elif pilihan == "🏠 Dashboard":
     st.markdown(f'<div class="main-header"><h1>🏠 Dashboard Utama</h1><p>Selamat datang kembali, <b>{st.session_state.nama}</b> 👋</p></div>', unsafe_allow_html=True)
 
     total_produk   = c.execute("SELECT COUNT(*) FROM produk").fetchone()[0]
@@ -445,6 +654,12 @@ if pilihan == "🏠 Dashboard":
 elif pilihan == "🧮 Input Produk & Skema":
     st.markdown('<div class="main-header"><h1>🧮 Input Produk & Kalkulator Kredit</h1></div>', unsafe_allow_html=True)
 
+    # Baca pengaturan
+    markup_default = get_pengaturan_float("markup_default_persen", 5.0)
+    bunga_flat = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
+    dp_min_persen = get_pengaturan_float("dp_minimal_persen", 20.0)
+    tenor_list = get_tenor_list()
+
     with st.expander("➕ Tambah Produk Baru Manual", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -459,10 +674,10 @@ elif pilihan == "🧮 Input Produk & Skema":
             harga_jual = st.number_input("Harga Jual (Rp)", min_value=0.0, step=1000.0, help="Harga yang akan dijual ke customer")
             markup_persen = 0
         else:
-            st.info("⚙️ **Non-pakaian**: gunakan **Markup (%)** dari harga modal.")
-            markup_persen = st.number_input("Markup / Margin (%)", min_value=0.0, max_value=300.0, value=5.0, step=5.0)
+            st.info(f"⚙️ **Non-pakaian**: gunakan **Markup (%)** dari harga modal. *(default owner: {markup_default:.1f}%)*")
+            markup_persen = st.number_input("Markup / Margin (%)", min_value=0.0, max_value=500.0, value=markup_default, step=1.0)
             harga_jual = None
-            st.caption(f"💡 Harga Cash Otomatis = Modal × (1 + {markup_persen:.0f}%) = **{format_rp(round(harga_modal * (1 + markup_persen/100), -2))}**")
+            st.caption(f"💡 Harga Cash Otomatis = Modal × (1 + {markup_persen:.1f}%) = **{format_rp(round(harga_modal * (1 + markup_persen/100), -2))}**")
 
         if st.button("💾 Simpan Produk"):
             if not nama_produk or harga_modal <= 0:
@@ -483,14 +698,14 @@ elif pilihan == "🧮 Input Produk & Skema":
     col1, col2 = st.columns(2)
     with col1:
         modal_sim = st.number_input("Harga Modal Simulasi (Rp)", min_value=0.0, value=5000000.0, step=100000.0)
-        dp_persen = st.slider("DP Minimal (%)", 10, 80, 20, 5)
+        dp_sim = st.slider(f"DP (%) — minimal {dp_min_persen:.0f}%", int(dp_min_persen), 80, int(dp_min_persen), 5)
     with col2:
-        tenor_sim = st.selectbox("Tenor (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
-        bunga_flat = st.number_input("Bunga Flat / 6 Bln (%)", min_value=0.0, value=40.0, step=1.0)
+        tenor_sim = st.selectbox("Tenor (Bulan)", tenor_list, index=min(3, len(tenor_list)-1))
+        bunga_sim = st.number_input(f"Bunga Flat / 6 Bln (%) — default owner: {bunga_flat:.1f}%", min_value=0.0, value=bunga_flat, step=1.0)
 
-    harga_cash = round(modal_sim * 1.05, -2)
-    dp_min     = round(harga_cash * dp_persen / 100, -2)
-    rate       = (bunga_flat / 100) / 6
+    harga_cash = round(modal_sim * (1 + markup_default/100), -2)
+    dp_min     = round(harga_cash * dp_sim / 100, -2)
+    rate       = (bunga_sim / 100) / 6
     bunga_total = rate * tenor_sim
     pokok = round(harga_cash - dp_min, -2)
     total = round(pokok * (1 + bunga_total), -2)
@@ -501,7 +716,7 @@ elif pilihan == "🧮 Input Produk & Skema":
 
     html = '<div class="metric-grid">'
     html += metric_card("Harga Cash", format_rp(harga_cash), "card-blue")
-    html += metric_card(f"DP Min ({dp_persen}%)", format_rp(dp_min), "card-purple")
+    html += metric_card(f"DP ({dp_sim}%)", format_rp(dp_min), "card-purple")
     html += metric_card("Total Hutang", format_rp(total), "card-dark")
     html += metric_card("Laba Kotor", format_rp(laba_kotor), "card-green")
     html += metric_card("Margin Profit", f"{margin_sim:.1f}%", "card-orange")
@@ -682,6 +897,12 @@ elif pilihan == "🛒 Jual Cash":
 # ==================== 5. KREDIT BARU ====================
 elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Transaksi Kredit Baru</h1></div>', unsafe_allow_html=True)
+
+    # Baca pengaturan
+    bunga_flat = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
+    dp_min_persen = get_pengaturan_float("dp_minimal_persen", 20.0)
+    tenor_list = get_tenor_list()
+
     df_cust = pd.read_sql_query("SELECT id, nama FROM customer", conn)
     df_prod = pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok, COALESCE(markup_persen, 5) as markup_persen, harga_jual FROM produk WHERE stok > 0 ORDER BY nama", conn)
 
@@ -703,21 +924,21 @@ elif pilihan == "📤 Kredit Baru":
             st.stop()
 
         h_cash = hitung_harga_cash(mod_p, mk_p, hj_p)
-        dp_min = round(h_cash * 0.2, -2)
+        dp_min = round(h_cash * dp_min_persen / 100, -2)
 
         if is_pakaian(kat_p):
             st.caption(f"👕 Pakaian — **Harga Jual (manual)**: {format_rp(h_cash)}")
         else:
-            st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
+            st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)} | DP min owner: **{dp_min_persen:.0f}%**")
 
         st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Tenor</h3></div>', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
-            dp = st.number_input(f"DP (Min: {format_rp(dp_min)})", min_value=float(dp_min), value=float(dp_min), step=50000.0)
+            dp = st.number_input(f"DP (Min: {format_rp(dp_min)} = {dp_min_persen:.0f}%)", min_value=float(dp_min), value=float(dp_min), step=50000.0)
         with col2:
-            tenor = st.selectbox("Tenor (Bulan)", [1, 2, 3, 6, 12, 18, 24], index=3)
+            tenor = st.selectbox("Tenor (Bulan)", tenor_list, index=min(3, len(tenor_list)-1))
 
-        rate = 0.40 / 6
+        rate = (bunga_flat / 100) / 6
         bunga = rate * tenor
         pokok = round(h_cash - dp, -2)
         total = round(pokok * (1 + bunga), -2)
@@ -736,6 +957,7 @@ elif pilihan == "📤 Kredit Baru":
         html += metric_card("Cicilan / Bulan", format_rp(cicilan), "card-pink")
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
+        st.caption(f"⚙️ Bunga flat: **{bunga_flat:.1f}% / 6 bulan** (owner setting) → tenor {tenor} bln = {bunga*100:.1f}%")
 
         cek = c.execute("SELECT COUNT(*) FROM kredit WHERE customer_id=? AND status='Berjalan'", (opsi_cust[pilih_c],)).fetchone()[0]
         if cek > 0:
@@ -780,14 +1002,15 @@ elif pilihan == "💰 Pembayaran Cicilan":
         tgl_skrg = datetime.now().date()
         tgl_tempo = datetime.strptime(detail['jatuh_tempo'], "%Y-%m-%d").date()
         hari_telat = (tgl_skrg - tgl_tempo).days
-        denda = round(detail['cicilan_bulan'] * 0.01 * hari_telat, -2) if hari_telat > 0 else 0
+        denda = hitung_denda(detail['cicilan_bulan'], hari_telat)
+        denda_persen = get_pengaturan_float("denda_per_hari_persen", 1.0)
 
         html = '<div class="metric-grid">'
         html += metric_card("Sisa Hutang", format_rp(detail['sisa_hutang']), "card-dark")
         html += metric_card("Cicilan / Bulan", format_rp(detail['cicilan_bulan']), "card-blue")
         html += metric_card("Jatuh Tempo", detail['jatuh_tempo'], "card-orange")
         html += metric_card("Hari Telat", f"{max(hari_telat,0)} hari", "card-pink" if hari_telat > 0 else "card-green")
-        html += metric_card("Denda (1%/hari)", format_rp(denda), "card-pink")
+        html += metric_card(f"Denda ({denda_persen:.2f}%/hari)", format_rp(denda), "card-pink")
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
@@ -835,7 +1058,7 @@ elif pilihan == "💰 Pembayaran Cicilan":
         else:
             st.info("Belum ada pembayaran untuk akun ini")
 
-# ==================== 6b. CETAK SLIP KREDIT (NEW) ====================
+# ==================== 6b. CETAK SLIP KREDIT ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Jadwal Angsuran</h1><p>Slip DP + jadwal cicilan per tenor untuk diberikan ke customer</p></div>', unsafe_allow_html=True)
 
@@ -868,11 +1091,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             FROM pembayaran WHERE kredit_id=? ORDER BY id
         """, conn, params=(kid,))
 
-        # ========= Bangun jadwal angsuran =========
         tanggal_kredit_str = d['tanggal_kredit'] if pd.notna(d['tanggal_kredit']) else (datetime.strptime(d['jatuh_tempo'], "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
         schedule = build_jadwal_angsuran(d['total_hutang'], d['cicilan_bulan'], d['tenor'], tanggal_kredit_str)
 
-        # Total principal yang sudah dibayar (untuk penentuan status lunas per baris)
         paid_principal = max(float(d['total_hutang']) - float(d['sisa_hutang']), 0)
         cum = 0
         for row in schedule:
@@ -885,7 +1106,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 row['status'] = "⏳ BELUM"
             row['sisa_real'] = max(cum - paid_principal, 0)
 
-        # ========= Ringkasan =========
         st.markdown('<div class="section-header"><h3>📋 Ringkasan Akad Kredit</h3></div>', unsafe_allow_html=True)
         html = '<div class="metric-grid">'
         html += metric_card("Harga Cash", format_rp(d['harga_cash']), "card-blue")
@@ -914,7 +1134,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             - Jatuh Tempo Berikutnya: **{d['jatuh_tempo']}**
             """)
 
-        # ========= Tabel Jadwal =========
         st.markdown('<div class="section-header"><h3>📅 Jadwal Angsuran (per Tenor)</h3></div>', unsafe_allow_html=True)
         df_sched = pd.DataFrame(schedule)[['ke', 'jatuh_tempo', 'angsuran', 'sisa', 'status']]
         df_sched_show = df_sched.copy()
@@ -926,7 +1145,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         })
         st.dataframe(df_sched_show, use_container_width=True, hide_index=True)
 
-        # ========= Riwayat Pembayaran =========
         st.markdown('<div class="section-header"><h3>📜 Riwayat Pembayaran</h3></div>', unsafe_allow_html=True)
         if not df_bayar.empty:
             df_bayar_show = df_bayar.copy()
@@ -942,7 +1160,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         else:
             st.info("Belum ada pembayaran — ini masih akad awal.")
 
-        # ========= SLIP PREVIEW (HTML siap cetak) =========
         st.markdown('<div class="section-header"><h3>🧾 Preview Slip untuk Customer</h3></div>', unsafe_allow_html=True)
 
         rows_html = ""
@@ -1212,8 +1429,8 @@ elif pilihan == "📦 Stok Barang":
                         new_harga_jual = st.number_input("Harga Jual (Rp)", value=float(row[5]) if row[5] else 0.0, step=1000.0)
                         new_markup = 0.0
                     else:
-                        st.caption("⚙️ Non-pakaian — gunakan **Markup (%)**.")
-                        new_markup = st.number_input("Markup / Margin (%)", value=float(row[4]), min_value=0.0, max_value=300.0, step=5.0)
+                        st.caption(f"⚙️ Non-pakaian — gunakan **Markup (%)**. *(default owner: {get_pengaturan_float('markup_default_persen', 5.0):.1f}%)*")
+                        new_markup = st.number_input("Markup / Margin (%)", value=float(row[4]), min_value=0.0, max_value=500.0, step=1.0)
                         new_harga_jual = row[5]
 
                     colA, colB = st.columns(2)
@@ -1256,13 +1473,14 @@ elif pilihan == "🚨 Overdue & Denda":
     if df_ov.empty:
         st.success("✅ Tidak ada akun overdue hari ini")
     else:
+        denda_persen = get_pengaturan_float("denda_per_hari_persen", 1.0)
         df_ov['hari_telat'] = df_ov['jatuh_tempo'].apply(lambda x: (datetime.now().date() - datetime.strptime(x, "%Y-%m-%d").date()).days)
-        df_ov['denda'] = df_ov.apply(lambda r: round(r['cicilan_bulan'] * 0.01 * r['hari_telat'], -2), axis=1)
+        df_ov['denda'] = df_ov.apply(lambda r: hitung_denda(r['cicilan_bulan'], r['hari_telat']), axis=1)
 
         html = '<div class="metric-grid">'
         html += metric_card("⚠️ Akun Overdue", f"{len(df_ov)} akun", "card-pink")
         html += metric_card("💰 Total Tunggakan", format_rp(df_ov['sisa_hutang'].sum()), "card-dark")
-        html += metric_card("💸 Total Denda", format_rp(df_ov['denda'].sum()), "card-orange")
+        html += metric_card(f"💸 Total Denda ({denda_persen:.2f}%/hari)", format_rp(df_ov['denda'].sum()), "card-orange")
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
 
@@ -1669,8 +1887,8 @@ elif pilihan == "💾 Backup, Cetak & Impor":
             st.download_button("📥 Download Invoice (HTML)", html_inv, f"invoice_{kid}.html", "text/html")
 
     with tab2:
-        tabel = st.selectbox("Pilih Data", ["Produk", "Customer", "Kredit", "Transaksi Masuk", "Pembayaran", "Log Aktivitas"])
-        map_tabel = {"Produk": "produk", "Customer": "customer", "Kredit": "kredit", "Transaksi Masuk": "transaksi_in", "Pembayaran": "pembayaran", "Log Aktivitas": "log_aktivitas"}
+        tabel = st.selectbox("Pilih Data", ["Produk", "Customer", "Kredit", "Transaksi Masuk", "Pembayaran", "Log Aktivitas", "Pengaturan"])
+        map_tabel = {"Produk": "produk", "Customer": "customer", "Kredit": "kredit", "Transaksi Masuk": "transaksi_in", "Pembayaran": "pembayaran", "Log Aktivitas": "log_aktivitas", "Pengaturan": "pengaturan"}
         df = pd.read_sql_query(f"SELECT * FROM {map_tabel[tabel]}", conn)
         if not df.empty:
             st.dataframe(df, use_container_width=True, hide_index=True)
