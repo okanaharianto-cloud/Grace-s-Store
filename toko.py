@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import altair as alt
+import streamlit.components.v1 as components  # Untuk fitur Print langsung
 
 # ==================== KONFIGURASI HALAMAN ====================
 st.set_page_config(
@@ -388,7 +389,6 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
 
     st.info("💡 **PENTING:** Pengaturan di halaman ini adalah **NILAI DEFAULT** untuk transaksi baru. Saat Anda membuat Kredit Baru, Anda tetap bisa mengedit persentase Bunga dan DP secara manual per transaksi.")
 
-    # ========== SECTION 1: MARKUP ==========
     st.markdown('<div class="section-header"><h3>💰 Markup / Margin Default</h3></div>', unsafe_allow_html=True)
     markup_val = st.number_input(
         "Markup default untuk produk **non-pakaian** (%)",
@@ -406,7 +406,6 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
         except Exception as e:
             st.error(f"❌ Gagal: {e}")
 
-    # ========== SECTION 2: BUNGA KREDIT ==========
     st.markdown('<div class="section-header"><h3>💳 Bunga Kredit Default</h3></div>', unsafe_allow_html=True)
     bunga_val = st.number_input(
         "Bunga flat per **6 bulan** (%)",
@@ -424,7 +423,6 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
         except Exception as e:
             st.error(f"❌ Gagal: {e}")
 
-    # ========== SECTION 3: DP MINIMAL ==========
     st.markdown('<div class="section-header"><h3>🪙 DP Minimal</h3></div>', unsafe_allow_html=True)
     dp_val = st.number_input(
         "DP minimal (% dari harga cash)",
@@ -442,7 +440,6 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
         except Exception as e:
             st.error(f"❌ Gagal: {e}")
 
-    # ========== SECTION 4: DENDA ==========
     st.markdown('<div class="section-header"><h3>⏰ Denda Keterlambatan</h3></div>', unsafe_allow_html=True)
     denda_val = st.number_input(
         "Denda per hari telat (% dari cicilan)",
@@ -461,7 +458,6 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
         except Exception as e:
             st.error(f"❌ Gagal: {e}")
 
-    # ========== SECTION 5: TENOR ==========
     st.markdown('<div class="section-header"><h3>📅 Pilihan Tenor</h3></div>', unsafe_allow_html=True)
     tenor_val = st.text_input(
         "Pilihan tenor (bulan, pisahkan dengan koma)",
@@ -478,7 +474,6 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
         except Exception:
             st.error("❌ Format tenor tidak valid. Gunakan angka dipisah koma, contoh: 1,3,6,12")
 
-    # ========== SECTION 6: RESET ==========
     st.markdown('<div class="section-header"><h3>🔄 Reset ke Default</h3></div>', unsafe_allow_html=True)
     st.warning("⚠️ Tombol ini akan mengembalikan **semua** pengaturan ke nilai default pabrik.")
     if st.button("🔄 Reset Semua Pengaturan ke Default"):
@@ -491,20 +486,9 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
         except Exception as e:
             st.error(f"❌ Gagal: {e}")
 
-    # ========== RINGKASAN ==========
     st.markdown('<div class="section-header"><h3>📋 Ringkasan Pengaturan Aktif</h3></div>', unsafe_allow_html=True)
     df_set = pd.read_sql_query("SELECT kunci, nilai, keterangan FROM pengaturan ORDER BY kunci", conn)
     st.dataframe(df_set, use_container_width=True, hide_index=True)
-
-    with st.expander("📜 Log Perubahan Pengaturan"):
-        df_log_set = pd.read_sql_query(
-            "SELECT waktu, username, aksi, detail FROM log_aktivitas WHERE aksi LIKE 'SET_%' OR aksi='RESET_PENGATURAN' ORDER BY id DESC LIMIT 50",
-            conn
-        )
-        if not df_log_set.empty:
-            st.dataframe(df_log_set, use_container_width=True, hide_index=True)
-        else:
-            st.info("Belum ada perubahan pengaturan.")
 
 # ==================== 1. DASHBOARD ====================
 elif pilihan == "🏠 Dashboard":
@@ -889,7 +873,6 @@ elif pilihan == "📤 Kredit Baru":
         else:
             st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
 
-        # ================= FORM EDIT PERSEN =================
         st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
         
         col_dp, col_tenor, col_bunga = st.columns(3)
@@ -913,7 +896,6 @@ elif pilihan == "📤 Kredit Baru":
                 help="Bisa diubah manual jika ada nego bunga"
             )
 
-        # Hitung mundur
         dp = round(h_cash * dp_persen / 100, -2)
         rate = (bunga_flat / 100) / 6
         bunga_total = rate * tenor
@@ -951,7 +933,7 @@ elif pilihan == "📤 Kredit Baru":
                 c.execute("UPDATE produk SET stok = stok - 1 WHERE id = ?", (id_p,))
                 conn.commit()
                 log_aksi(st.session_state.username, "KREDIT_BARU", f"Customer {pilih_c}, Produk {pilih_p}")
-                flash("🎉 Akad kredit berhasil! Barang siap diserahkan. Cetak slip di menu **🖨️ Cetak Slip Kredit**.", "success")
+                flash("🎉 Akad kredit berhasil! Silakan buka menu **🖨️ Cetak Slip Kredit** untuk mencetak invoice.", "success")
                 st.session_state.balloons = True
                 st.rerun()
             except Exception as e:
@@ -1035,7 +1017,7 @@ elif pilihan == "💰 Pembayaran Cicilan":
         else:
             st.info("Belum ada pembayaran untuk akun ini")
 
-# ==================== 6b. CETAK SLIP KREDIT (FITUR EDIT, SAVE, DELETE) ====================
+# ==================== 6b. CETAK SLIP KREDIT (PRINT & FOOTER) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Jadwal Angsuran</h1><p>Slip DP + jadwal cicilan per tenor untuk diberikan ke customer</p></div>', unsafe_allow_html=True)
 
@@ -1063,7 +1045,15 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             WHERE k.id=?
         """, conn, params=(kid,)).iloc[0]
 
-        # ================= FORM EDIT AKAD KREDIT (MENGUBAH JADWAL) =================
+        # Input Metode Pembayaran untuk dicetak di Invoice
+        metode_bayar = st.radio(
+            "Pilih Metode Pembayaran Angsuran (akan dicetak di Invoice):",
+            ["Tunai (Cash)", "Transfer Bank"],
+            horizontal=True
+        )
+        denda_harian = get_pengaturan_float("denda_per_hari_persen", 1.0)
+
+        # ================= FORM EDIT AKAD KREDIT =================
         with st.expander("⚙️ Edit Akad Kredit (Mengubah Total, Tenor, Cicilan, atau Jatuh Tempo)", expanded=False):
             with st.form(f"form_edit_akad_{kid}"):
                 col1, col2 = st.columns(2)
@@ -1078,7 +1068,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     try:
                         c.execute("UPDATE kredit SET total_hutang=?, tenor=?, cicilan_bulan=?, jatuh_tempo=? WHERE id=?",
                                   (new_total, new_tenor, new_cicilan, new_tempo.strftime("%Y-%m-%d"), kid))
-                        recalculate_kredit(kid) # Menghitung ulang sisa hutang
+                        recalculate_kredit(kid)
                         conn.commit()
                         log_aksi(st.session_state.username, "EDIT_AKAD_KREDIT", f"ID {kid}")
                         flash("✅ Akad kredit diupdate! Jadwal angsuran telah disesuaikan.", "success")
@@ -1110,7 +1100,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         st.markdown('<div class="section-header"><h3>📋 Ringkasan Akad Kredit</h3></div>', unsafe_allow_html=True)
         html = '<div class="metric-grid">'
         html += metric_card("Harga Cash", format_rp(d['harga_cash']), "card-blue")
-        html += metric_card("DP Dibayar", format_rp(d['dp']), "card-purple")
+        html += metric_card("DP Dibayar (Uang Masuk)", format_rp(d['dp']), "card-purple")
         html += metric_card("Pokok Hutang", format_rp(d['pokok_hutang']), "card-orange")
         html += metric_card("Total Hutang", format_rp(d['total_hutang']), "card-dark")
         html += metric_card(f"Cicilan × {int(d['tenor'])} bln", format_rp(d['cicilan_bulan']), "card-pink")
@@ -1167,21 +1157,17 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             
             if st.button("💾 Simpan Perubahan Riwayat Pembayaran"):
                 try:
-                    # Hapus data yang dihapus di UI
                     current_ids = df_bayar['id'].tolist()
                     edited_ids = [int(x) for x in edited_bayar['id'].dropna().tolist()]
                     deleted_ids = list(set(current_ids) - set(edited_ids))
                     for did in deleted_ids:
                         c.execute("DELETE FROM pembayaran WHERE id=?", (did,))
 
-                    # Update atau Insert
                     for _, row in edited_bayar.iterrows():
                         if pd.isna(row['id']):
-                            # Baris Baru
                             c.execute("INSERT INTO pembayaran (kredit_id, jumlah_bayar, denda, tanggal, keterangan) VALUES (?,?,?,?,?)",
                                       (kid, row['jumlah_bayar'], row['denda'], str(row['tanggal']), row['keterangan']))
                         else:
-                            # Edit Baris
                             c.execute("UPDATE pembayaran SET jumlah_bayar=?, denda=?, tanggal=?, keterangan=? WHERE id=?",
                                       (row['jumlah_bayar'], row['denda'], str(row['tanggal']), row['keterangan'], int(row['id'])))
                     
@@ -1198,8 +1184,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             st.success(f"💰 **Total sudah dibayar:** {format_rp(total_dibayar)}  |  **Sisa hutang:** {format_rp(d['sisa_hutang'])}")
         else:
             st.info("Belum ada pembayaran — ini masih akad awal.")
-            
-            # Form tambah pembayaran manual jika masih kosong
             with st.form(f"form_add_bayar_{kid}"):
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -1216,100 +1200,211 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                         conn.commit()
                         st.rerun()
 
-        # ================= PREVIEW CETAK HTML =================
-        st.markdown('<div class="section-header"><h3>🧾 Preview Slip untuk Customer</h3></div>', unsafe_allow_html=True)
+        # ================= PRINT & INVOICE =================
+        st.markdown('<div class="section-header"><h3>🧾 Preview & Cetak Slip (Invoice)</h3></div>', unsafe_allow_html=True)
 
         rows_html = ""
         for row in schedule:
             rows_html += f"""
                 <tr>
-                    <td style="padding:6px 8px; border-bottom:1px solid #eee; text-align:center;">{row['ke']}</td>
-                    <td style="padding:6px 8px; border-bottom:1px solid #eee;">{row['jatuh_tempo']}</td>
-                    <td style="padding:6px 8px; border-bottom:1px solid #eee; text-align:right;">{format_rp(row['angsuran'])}</td>
-                    <td style="padding:6px 8px; border-bottom:1px solid #eee; text-align:right;">{format_rp(row['sisa'])}</td>
-                    <td style="padding:6px 8px; border-bottom:1px solid #eee; text-align:center;">{row['status']}</td>
+                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:center;">{row['ke']}</td>
+                    <td style="padding:8px; border-bottom:1px solid #ddd;">{row['jatuh_tempo']}</td>
+                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['angsuran'])}</td>
+                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['sisa'])}</td>
+                    <td style="padding:8px; border-bottom:1px solid #ddd; text-align:center;">{row['status']}</td>
                 </tr>
             """
 
-        slip_html = f"""
-        <html><head><meta charset="utf-8"><title>Slip Kredit #{kid}</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: auto; color: #222; }}
-            h2 {{ color: #667eea; text-align: center; margin-bottom: 0; }}
-            .center {{ text-align: center; }}
-            .box {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin: 10px 0; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 6px; }}
-            th {{ background: #667eea; color: white; padding: 8px; text-align: left; font-size: 13px; }}
-            td {{ font-size: 13px; }}
-            .ttl {{ font-weight: bold; }}
-            .sig {{ display: flex; justify-content: space-between; margin-top: 40px; }}
-            .sig div {{ width: 40%; text-align: center; border-top: 1px solid #999; padding-top: 8px; font-size: 13px; }}
-        </style></head><body>
-        <h2>🏪 GRACE'S STORE</h2>
-        <p class="center" style="color:#666; margin-top:0;">Slip Angsuran Kredit — No. Kontrak #{kid}</p>
-        <p class="center" style="color:#888; font-size:12px;">Dicetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}</p>
+        # Desain HTML untuk cetak (Monokrom / Hemat Tinta) dengan Footer Syarat & Ketentuan
+        invoice_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Invoice Kredit - GRACE'S STORE</title>
+            <style>
+                body {{ font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: auto; color: #000; }}
+                h2 {{ text-align: center; margin-bottom: 5px; text-transform: uppercase; }}
+                .header-info {{ text-align: center; margin-bottom: 20px; font-size: 12px; }}
+                .box {{ border: 1px solid #000; padding: 15px; margin-bottom: 20px; border-radius: 5px; }}
+                .box-title {{ font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 10px; }}
+                table {{ width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 15px; }}
+                th {{ background-color: #e0e0e0; padding: 8px; text-align: left; border-bottom: 2px solid #000; }}
+                td {{ padding: 6px 8px; border-bottom: 1px dashed #ccc; }}
+                .right {{ text-align: right; }}
+                .center {{ text-align: center; }}
+                .bold {{ font-weight: bold; }}
+                .signature {{ display: flex; justify-content: space-between; margin-top: 40px; text-align: center; }}
+                .signature div {{ width: 40%; border-top: 1px solid #000; padding-top: 10px; }}
+                .footer-terms {{ margin-top: 20px; font-size: 11px; background-color: #f9f9f9; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }}
+                @media print {{
+                    body {{ padding: 0; }}
+                    .no-print {{ display: none; }}
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>GRACE'S STORE</h2>
+            <div class="header-info">
+                Invoice / Slip Pembayaran Kredit<br>
+                No. Transaksi: <b>#{kid}</b> | Tanggal Cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}
+            </div>
 
-        <div class="box">
-            <b>👤 Customer</b><br>
-            Nama: {d['cn']}<br>
-            Telepon: {d['telepon'] or '-'}<br>
-            Alamat: {d['alamat'] or '-'}
-        </div>
+            <div class="box">
+                <div class="box-title">👤 Data Customer</div>
+                <table style="border:none;">
+                    <tr>
+                        <td style="border:none; width: 20%;"><b>Nama</b></td>
+                        <td style="border:none;">: {d['cn']}</td>
+                        <td style="border:none; width: 20%;"><b>Telepon</b></td>
+                        <td style="border:none;">: {d['telepon'] or '-'}</td>
+                    </tr>
+                    <tr>
+                        <td style="border:none;"><b>Alamat</b></td>
+                        <td style="border:none;" colspan="3">: {d['alamat'] or '-'}</td>
+                    </tr>
+                </table>
+            </div>
 
-        <div class="box">
-            <b>📱 Produk</b><br>
-            Nama: {d['pn']}<br>
-            Tanggal Akad: {tanggal_kredit_str}<br>
-            Status: <b>{d['status']}</b>
-        </div>
+            <div class="box">
+                <div class="box-title">📱 Informasi Produk</div>
+                <table style="border:none;">
+                    <tr>
+                        <td style="border:none; width: 20%;"><b>Nama Produk</b></td>
+                        <td style="border:none;">: {d['pn']}</td>
+                        <td style="border:none; width: 20%;"><b>Status Kredit</b></td>
+                        <td style="border:none;">: <b>{d['status']}</b></td>
+                    </tr>
+                </table>
+            </div>
 
-        <div class="box">
-            <b>💰 Rincian Pembiayaan</b>
-            <table>
-                <tr><td>Harga Cash</td><td align="right" class="ttl">{format_rp(d['harga_cash'])}</td></tr>
-                <tr><td>DP Dibayar</td><td align="right">{format_rp(d['dp'])}</td></tr>
-                <tr><td>Pokok Hutang</td><td align="right">{format_rp(d['pokok_hutang'])}</td></tr>
-                <tr><td>Total Hutang (Pokok + Bunga)</td><td align="right" class="ttl">{format_rp(d['total_hutang'])}</td></tr>
-                <tr><td>Tenor</td><td align="right">{int(d['tenor'])} bulan</td></tr>
-                <tr><td>Cicilan / Bulan</td><td align="right" class="ttl" style="color:#e74c3c;">{format_rp(d['cicilan_bulan'])}</td></tr>
-                <tr><td>Sisa Hutang Saat Ini</td><td align="right" class="ttl">{format_rp(d['sisa_hutang'])}</td></tr>
-                <tr><td>Jatuh Tempo Berikutnya</td><td align="right">{d['jatuh_tempo']}</td></tr>
-            </table>
-        </div>
+            <div class="box">
+                <div class="box-title">💰 Rincian Pembayaran & Uang Masuk (DP)</div>
+                <table>
+                    <tr>
+                        <td>Harga Cash</td>
+                        <td class="right">{format_rp(d['harga_cash'])}</td>
+                    </tr>
+                    <tr>
+                        <td class="bold" style="color: #000; font-size: 14px;">DP Telah Dibayar (Uang Masuk)</td>
+                        <td class="right bold" style="font-size: 14px;">{format_rp(d['dp'])}</td>
+                    </tr>
+                    <tr>
+                        <td>Pokok Hutang</td>
+                        <td class="right">{format_rp(d['pokok_hutang'])}</td>
+                    </tr>
+                    <tr>
+                        <td>Total Hutang (Pokok + Bunga)</td>
+                        <td class="right bold">{format_rp(d['total_hutang'])}</td>
+                    </tr>
+                    <tr>
+                        <td>Tenor</td>
+                        <td class="right">{int(d['tenor'])} Bulan</td>
+                    </tr>
+                    <tr>
+                        <td class="bold">Cicilan / Bulan</td>
+                        <td class="right bold" style="font-size: 14px;">{format_rp(d['cicilan_bulan'])}</td>
+                    </tr>
+                    <tr>
+                        <td>Sisa Hutang Saat Ini</td>
+                        <td class="right bold">{format_rp(d['sisa_hutang'])}</td>
+                    </tr>
+                    <tr>
+                        <td>Jatuh Tempo Berikutnya</td>
+                        <td class="right">{d['jatuh_tempo']}</td>
+                    </tr>
+                </table>
+            </div>
 
-        <div class="box">
-            <b>📅 Jadwal Angsuran per Tenor</b>
-            <table>
-                <thead><tr>
-                    <th style="width:60px; text-align:center;">Ke-</th>
-                    <th>Jatuh Tempo</th>
-                    <th style="text-align:right;">Angsuran</th>
-                    <th style="text-align:right;">Sisa Setelah Bayar</th>
-                    <th style="text-align:center;">Status</th>
-                </tr></thead>
-                <tbody>{rows_html}</tbody>
-            </table>
-        </div>
+            <div class="box">
+                <div class="box-title">📅 Jadwal Angsuran (Per Tenor)</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="center" style="width: 50px;">Ke-</th>
+                            <th>Jatuh Tempo</th>
+                            <th class="right">Angsuran</th>
+                            <th class="right">Sisa Hutang</th>
+                            <th class="center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows_html}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="footer-terms">
+                <div style="font-weight: bold; margin-bottom: 5px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px;">SYARAT & KETENTUAN PEMBAYARAN</div>
+                <table style="border: none; margin-bottom: 0;">
+                    <tr>
+                        <td style="border:none; width: 35%;"><b>Metode Pembayaran</b></td>
+                        <td style="border:none;">: <b>{metode_bayar}</b></td>
+                    </tr>
+                    <tr>
+                        <td style="border:none;"><b>Term of Payment (Jatuh Tempo)</b></td>
+                        <td style="border:none;">: Setiap 30 hari sekali (Tempo berikutnya: {d['jatuh_tempo']})</td>
+                    </tr>
+                    <tr>
+                        <td style="border:none;"><b>Biaya Adm. Keterlambatan</b></td>
+                        <td style="border:none;">: <b>{denda_harian}% / hari</b> dari jumlah angsuran</td>
+                    </tr>
+                </table>
+            </div>
 
-        <div class="sig">
-            <div>Pihak Toko</div>
-            <div>Customer</div>
-        </div>
-        <p class="center" style="color:#888; font-size:11px; margin-top:30px;">
-            Slip ini merupakan bukti sah akad kredit GRACE'S STORE.<br>
-            Harap simpan untuk keperluan pembayaran cicilan.
-        </p>
-        </body></html>
+            <div class="signature">
+                <div>Pihak Toko (Hormat Kami)</div>
+                <div>Customer (Penerima)</div>
+            </div>
+            
+            <p class="center" style="font-size: 10px; margin-top: 30px; color: #555;">
+                Slip ini adalah bukti sah akad kredit GRACE'S STORE.<br>
+                Simpan slip ini untuk keperluan pembayaran angsuran selanjutnya.
+            </p>
+        </body>
+        </html>
         """
 
+        # Tampilkan tombol Print JavaScript
+        components.html(
+            f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 0; padding: 10px; }}
+                    .btn-print {{
+                        background-color: #667eea; color: white; border: none;
+                        padding: 12px 24px; font-size: 16px; border-radius: 8px;
+                        cursor: pointer; display: block; margin: 0 auto 15px auto;
+                        font-weight: bold; width: 100%;
+                    }}
+                    .btn-print:hover {{ background-color: #764ba2; }}
+                    .print-area {{ border: 1px solid #ddd; padding: 20px; border-radius: 10px; background: white; }}
+                    @media print {{
+                        .btn-print {{ display: none; }}
+                        .print-area {{ border: none; padding: 0; }}
+                    }}
+                </style>
+            </head>
+            <body>
+                <button class="btn-print" onclick="window.print()">🖨️ Cetak Sekarang (Print / Simpan PDF)</button>
+                <div class="print-area">
+                    {invoice_html.split('<body>')[1].split('</body>')[0]}
+                </div>
+            </body>
+            </html>
+            """,
+            height=800,
+            scrolling=True
+        )
+        
         st.download_button(
-            f"📥 Download Slip Kredit #{kid} (HTML — siap cetak)",
-            slip_html,
-            f"slip_kredit_{kid}.html",
+            f"📥 Download File Slip (HTML)",
+            invoice_html,
+            f"invoice_kredit_{kid}.html",
             "text/html",
             use_container_width=True
         )
-        st.info("💡 Buka file HTML di browser → tekan **Ctrl+P** → Print / Save as PDF → berikan ke customer.")
 
 # ==================== 7. DATA CUSTOMER ====================
 elif pilihan == "👥 Data Customer":
