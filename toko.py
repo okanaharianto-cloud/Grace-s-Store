@@ -91,7 +91,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS users
               nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
 c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas
              (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
-# ==================== TABEL PENGATURAN (BARU) ====================
+# ==================== TABEL PENGATURAN ====================
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan
              (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
 conn.commit()
@@ -138,7 +138,6 @@ def format_rp(n):
         return "Rp 0"
 
 def get_pengaturan(kunci, default=None):
-    """Ambil nilai pengaturan dari DB (cache di session)."""
     cache_key = f"_setting_{kunci}"
     if cache_key in st.session_state:
         return st.session_state[cache_key]
@@ -164,7 +163,6 @@ def set_pengaturan(kunci, nilai, keterangan=None):
     c.execute("INSERT OR REPLACE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)",
               (kunci, str(nilai), keterangan or ""))
     conn.commit()
-    # Invalidasi cache
     st.session_state.pop(f"_setting_{kunci}", None)
 
 def log_aksi(username, aksi, detail=""):
@@ -377,7 +375,6 @@ with st.sidebar:
         st.session_state.pop("flash", None)
         st.session_state.pop("balloons", None)
         st.session_state.pop("snow", None)
-        # Bersihkan cache pengaturan
         for k in list(st.session_state.keys()):
             if k.startswith("_setting_"):
                 st.session_state.pop(k, None)
@@ -385,28 +382,22 @@ with st.sidebar:
 
 show_flash()
 
-# ==================== 0. PENGATURAN OWNER (BARU) ====================
+# ==================== 0. PENGATURAN OWNER (REVISI) ====================
 if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
-    st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase & parameter toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase default toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
 
-    st.info("💡 **Perubahan pengaturan berlaku untuk transaksi BARU.** Transaksi lama tetap memakai nilai saat dibuat (tidak diubah).")
+    st.info("💡 **PENTING:** Pengaturan di halaman ini adalah **NILAI DEFAULT** untuk transaksi baru. Saat Anda membuat Kredit Baru, Anda tetap bisa mengedit persentase Bunga dan DP secara manual per transaksi.")
 
     # ========== SECTION 1: MARKUP ==========
     st.markdown('<div class="section-header"><h3>💰 Markup / Margin Default</h3></div>', unsafe_allow_html=True)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        markup_val = st.number_input(
-            "Markup default untuk produk **non-pakaian** (%)",
-            min_value=0.0, max_value=500.0,
-            value=get_pengaturan_float("markup_default_persen", 5.0),
-            step=1.0,
-            help="Dipakai saat input produk baru non-pakaian. Pakaian pakai harga jual manual."
-        )
-        contoh_modal = 1000000
-        st.caption(f"Contoh: Modal {format_rp(contoh_modal)} → Harga Cash otomatis **{format_rp(round(contoh_modal * (1 + markup_val/100), -2))}**")
-    with col2:
-        st.metric("Markup Saat Ini", f"{get_pengaturan_float('markup_default_persen', 5.0):.1f}%")
-    if st.button("💾 Simpan Markup", key="save_markup"):
+    markup_val = st.number_input(
+        "Markup default untuk produk **non-pakaian** (%)",
+        min_value=0.0, max_value=500.0,
+        value=get_pengaturan_float("markup_default_persen", 5.0),
+        step=1.0,
+        key="input_markup_owner"
+    )
+    if st.button("💾 Simpan Markup Default", key="save_markup"):
         try:
             set_pengaturan("markup_default_persen", f"{markup_val:.2f}")
             log_aksi(st.session_state.username, "SET_MARKUP", f"{markup_val}%")
@@ -416,26 +407,15 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
             st.error(f"❌ Gagal: {e}")
 
     # ========== SECTION 2: BUNGA KREDIT ==========
-    st.markdown('<div class="section-header"><h3>💳 Bunga Kredit</h3></div>', unsafe_allow_html=True)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        bunga_val = st.number_input(
-            "Bunga flat per **6 bulan** (%)",
-            min_value=0.0, max_value=200.0,
-            value=get_pengaturan_float("bunga_flat_6bln_persen", 40.0),
-            step=1.0,
-            help="Bunga dihitung proporsional: tenor 3 bln = setengah, tenor 12 bln = dua kali nilai ini."
-        )
-        # Simulasi
-        cicilan_sim = 5000000
-        for t_sim in [3, 6, 12]:
-            rate = (bunga_val / 100) / 6
-            bunga_total = rate * t_sim
-            total_sim = round(cicilan_sim * (1 + bunga_total), -2)
-            st.caption(f"• Tenor {t_sim} bln → bunga total {bunga_total*100:.1f}% → hutang **{format_rp(total_sim)}** (cicilan {format_rp(total_sim/t_sim)})")
-    with col2:
-        st.metric("Bunga Saat Ini", f"{get_pengaturan_float('bunga_flat_6bln_persen', 40.0):.1f}%")
-    if st.button("💾 Simpan Bunga", key="save_bunga"):
+    st.markdown('<div class="section-header"><h3>💳 Bunga Kredit Default</h3></div>', unsafe_allow_html=True)
+    bunga_val = st.number_input(
+        "Bunga flat per **6 bulan** (%)",
+        min_value=0.0, max_value=200.0,
+        value=get_pengaturan_float("bunga_flat_6bln_persen", 40.0),
+        step=1.0,
+        key="input_bunga_owner"
+    )
+    if st.button("💾 Simpan Bunga Default", key="save_bunga"):
         try:
             set_pengaturan("bunga_flat_6bln_persen", f"{bunga_val:.2f}")
             log_aksi(st.session_state.username, "SET_BUNGA", f"{bunga_val}%")
@@ -446,19 +426,14 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
 
     # ========== SECTION 3: DP MINIMAL ==========
     st.markdown('<div class="section-header"><h3>🪙 DP Minimal</h3></div>', unsafe_allow_html=True)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        dp_val = st.number_input(
-            "DP minimal (% dari harga cash)",
-            min_value=0.0, max_value=100.0,
-            value=get_pengaturan_float("dp_minimal_persen", 20.0),
-            step=1.0,
-            help="Batas bawah DP yang wajib dibayar customer saat akad kredit."
-        )
-        st.caption(f"Contoh: Harga cash Rp 10.000.000 → DP minimal **{format_rp(round(10000000 * dp_val/100, -2))}**")
-    with col2:
-        st.metric("DP Saat Ini", f"{get_pengaturan_float('dp_minimal_persen', 20.0):.1f}%")
-    if st.button("💾 Simpan DP", key="save_dp"):
+    dp_val = st.number_input(
+        "DP minimal (% dari harga cash)",
+        min_value=0.0, max_value=100.0,
+        value=get_pengaturan_float("dp_minimal_persen", 20.0),
+        step=1.0,
+        key="input_dp_owner"
+    )
+    if st.button("💾 Simpan DP Minimal", key="save_dp"):
         try:
             set_pengaturan("dp_minimal_persen", f"{dp_val:.2f}")
             log_aksi(st.session_state.username, "SET_DP", f"{dp_val}%")
@@ -469,19 +444,14 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
 
     # ========== SECTION 4: DENDA ==========
     st.markdown('<div class="section-header"><h3>⏰ Denda Keterlambatan</h3></div>', unsafe_allow_html=True)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        denda_val = st.number_input(
-            "Denda per hari telat (% dari cicilan)",
-            min_value=0.0, max_value=20.0,
-            value=get_pengaturan_float("denda_per_hari_persen", 1.0),
-            step=0.1,
-            format="%.2f",
-            help="Contoh: cicilan Rp 1.000.000 × 1%/hari × 5 hari telat = Rp 50.000 denda."
-        )
-        st.caption(f"Simulasi: cicilan Rp 1.000.000, telat 5 hari → denda **{format_rp(round(1000000 * (denda_val/100) * 5, -2))}**")
-    with col2:
-        st.metric("Denda Saat Ini", f"{get_pengaturan_float('denda_per_hari_persen', 1.0):.2f}% / hari")
+    denda_val = st.number_input(
+        "Denda per hari telat (% dari cicilan)",
+        min_value=0.0, max_value=20.0,
+        value=get_pengaturan_float("denda_per_hari_persen", 1.0),
+        step=0.1,
+        format="%.2f",
+        key="input_denda_owner"
+    )
     if st.button("💾 Simpan Denda", key="save_denda"):
         try:
             set_pengaturan("denda_per_hari_persen", f"{denda_val:.2f}")
@@ -493,20 +463,11 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
 
     # ========== SECTION 5: TENOR ==========
     st.markdown('<div class="section-header"><h3>📅 Pilihan Tenor</h3></div>', unsafe_allow_html=True)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        tenor_val = st.text_input(
-            "Pilihan tenor (bulan, pisahkan dengan koma)",
-            value=get_pengaturan("tenor_options", "1,2,3,6,12,18,24"),
-            help="Contoh: 1,2,3,6,12,18,24 — akan muncul di dropdown tenor."
-        )
-        try:
-            parsed = [int(x.strip()) for x in tenor_val.split(",") if x.strip()]
-            st.caption(f"✅ Terdeteksi {len(parsed)} pilihan tenor: {parsed}")
-        except Exception:
-            st.caption("⚠️ Format tidak valid — akan fallback ke default 1,2,3,6,12,18,24")
-    with col2:
-        st.metric("Tenor Saat Ini", get_pengaturan("tenor_options", "1,2,3,6,12,18,24"))
+    tenor_val = st.text_input(
+        "Pilihan tenor (bulan, pisahkan dengan koma)",
+        value=get_pengaturan("tenor_options", "1,2,3,6,12,18,24"),
+        key="input_tenor_owner"
+    )
     if st.button("💾 Simpan Tenor", key="save_tenor"):
         try:
             _ = [int(x.strip()) for x in tenor_val.split(",") if x.strip()]
@@ -519,7 +480,7 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
 
     # ========== SECTION 6: RESET ==========
     st.markdown('<div class="section-header"><h3>🔄 Reset ke Default</h3></div>', unsafe_allow_html=True)
-    st.warning("⚠️ Tombol ini akan mengembalikan **semua** pengaturan ke nilai default pabrik. Transaksi & produk tidak terpengaruh.")
+    st.warning("⚠️ Tombol ini akan mengembalikan **semua** pengaturan ke nilai default pabrik.")
     if st.button("🔄 Reset Semua Pengaturan ke Default"):
         try:
             for k, (v, ket) in DEFAULT_PENGATURAN.items():
@@ -654,7 +615,6 @@ elif pilihan == "🏠 Dashboard":
 elif pilihan == "🧮 Input Produk & Skema":
     st.markdown('<div class="main-header"><h1>🧮 Input Produk & Kalkulator Kredit</h1></div>', unsafe_allow_html=True)
 
-    # Baca pengaturan
     markup_default = get_pengaturan_float("markup_default_persen", 5.0)
     bunga_flat = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
     dp_min_persen = get_pengaturan_float("dp_minimal_persen", 20.0)
@@ -894,13 +854,12 @@ elif pilihan == "🛒 Jual Cash":
             else:
                 st.write("Belum ada data.")
 
-# ==================== 5. KREDIT BARU ====================
+# ==================== 5. KREDIT BARU (REVISI) ====================
 elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Transaksi Kredit Baru</h1></div>', unsafe_allow_html=True)
 
-    # Baca pengaturan
-    bunga_flat = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
-    dp_min_persen = get_pengaturan_float("dp_minimal_persen", 20.0)
+    bunga_flat_default = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
+    dp_min_persen_default = get_pengaturan_float("dp_minimal_persen", 20.0)
     tenor_list = get_tenor_list()
 
     df_cust = pd.read_sql_query("SELECT id, nama FROM customer", conn)
@@ -924,24 +883,42 @@ elif pilihan == "📤 Kredit Baru":
             st.stop()
 
         h_cash = hitung_harga_cash(mod_p, mk_p, hj_p)
-        dp_min = round(h_cash * dp_min_persen / 100, -2)
 
         if is_pakaian(kat_p):
             st.caption(f"👕 Pakaian — **Harga Jual (manual)**: {format_rp(h_cash)}")
         else:
-            st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)} | DP min owner: **{dp_min_persen:.0f}%**")
+            st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
 
-        st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Tenor</h3></div>', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            dp = st.number_input(f"DP (Min: {format_rp(dp_min)} = {dp_min_persen:.0f}%)", min_value=float(dp_min), value=float(dp_min), step=50000.0)
-        with col2:
+        # ================= FORM EDIT PERSEN =================
+        st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
+        
+        col_dp, col_tenor, col_bunga = st.columns(3)
+        with col_dp:
+            dp_persen = st.number_input(
+                "DP (%)", 
+                min_value=float(dp_min_persen_default), 
+                max_value=100.0, 
+                value=float(dp_min_persen_default), 
+                step=1.0,
+                help=f"Minimal DP dari Owner adalah {dp_min_persen_default}%"
+            )
+        with col_tenor:
             tenor = st.selectbox("Tenor (Bulan)", tenor_list, index=min(3, len(tenor_list)-1))
+        with col_bunga:
+            bunga_flat = st.number_input(
+                "Bunga Flat / 6 Bln (%)", 
+                min_value=0.0, 
+                value=float(bunga_flat_default), 
+                step=1.0,
+                help="Bisa diubah manual jika ada nego bunga"
+            )
 
+        # Hitung mundur
+        dp = round(h_cash * dp_persen / 100, -2)
         rate = (bunga_flat / 100) / 6
-        bunga = rate * tenor
+        bunga_total = rate * tenor
         pokok = round(h_cash - dp, -2)
-        total = round(pokok * (1 + bunga), -2)
+        total = round(pokok * (1 + bunga_total), -2)
         cicilan = round(total / tenor, -2) if tenor > 0 else 0
 
         revenue = dp + total
@@ -950,14 +927,14 @@ elif pilihan == "📤 Kredit Baru":
 
         html = '<div class="metric-grid">'
         html += metric_card("Harga Cash", format_rp(h_cash), "card-blue")
-        html += metric_card("DP", format_rp(dp), "card-purple")
+        html += metric_card("Nominal DP", format_rp(dp), "card-purple")
         html += metric_card("Total Hutang", format_rp(total), "card-dark")
         html += metric_card("Potensi Laba", format_rp(laba_transaksi), "card-green")
         html += metric_card("Margin (%)", f"{margin_transaksi:.1f}%", "card-orange")
         html += metric_card("Cicilan / Bulan", format_rp(cicilan), "card-pink")
         html += '</div>'
         st.markdown(html, unsafe_allow_html=True)
-        st.caption(f"⚙️ Bunga flat: **{bunga_flat:.1f}% / 6 bulan** (owner setting) → tenor {tenor} bln = {bunga*100:.1f}%")
+        st.caption(f"⚙️ Bunga transaksi ini: **{bunga_flat:.1f}% / 6 bulan** → tenor {tenor} bln = {bunga_total*100:.1f}%")
 
         cek = c.execute("SELECT COUNT(*) FROM kredit WHERE customer_id=? AND status='Berjalan'", (opsi_cust[pilih_c],)).fetchone()[0]
         if cek > 0:
