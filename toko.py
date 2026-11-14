@@ -382,7 +382,7 @@ with st.sidebar:
 
 show_flash()
 
-# ==================== 0. PENGATURAN OWNER (REVISI) ====================
+# ==================== 0. PENGATURAN OWNER ====================
 if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase default toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
 
@@ -854,7 +854,7 @@ elif pilihan == "🛒 Jual Cash":
             else:
                 st.write("Belum ada data.")
 
-# ==================== 5. KREDIT BARU (REVISI) ====================
+# ==================== 5. KREDIT BARU ====================
 elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Transaksi Kredit Baru</h1></div>', unsafe_allow_html=True)
 
@@ -1035,7 +1035,7 @@ elif pilihan == "💰 Pembayaran Cicilan":
         else:
             st.info("Belum ada pembayaran untuk akun ini")
 
-# ==================== 6b. CETAK SLIP KREDIT ====================
+# ==================== 6b. CETAK SLIP KREDIT (FITUR EDIT, SAVE, DELETE) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Jadwal Angsuran</h1><p>Slip DP + jadwal cicilan per tenor untuk diberikan ke customer</p></div>', unsafe_allow_html=True)
 
@@ -1063,8 +1063,32 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             WHERE k.id=?
         """, conn, params=(kid,)).iloc[0]
 
+        # ================= FORM EDIT AKAD KREDIT (MENGUBAH JADWAL) =================
+        with st.expander("⚙️ Edit Akad Kredit (Mengubah Total, Tenor, Cicilan, atau Jatuh Tempo)", expanded=False):
+            with st.form(f"form_edit_akad_{kid}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    new_total = st.number_input("Total Hutang (Rp)", value=float(d['total_hutang']), step=10000.0)
+                    new_tenor = st.number_input("Tenor (Bulan)", value=int(d['tenor']), step=1, min_value=1)
+                with col2:
+                    new_cicilan = st.number_input("Cicilan / Bulan (Rp)", value=float(d['cicilan_bulan']), step=10000.0)
+                    new_tempo = st.date_input("Jatuh Tempo Berikutnya", value=pd.to_datetime(d['jatuh_tempo']).date())
+                
+                if st.form_submit_button("💾 Simpan Perubahan Akad"):
+                    try:
+                        c.execute("UPDATE kredit SET total_hutang=?, tenor=?, cicilan_bulan=?, jatuh_tempo=? WHERE id=?",
+                                  (new_total, new_tenor, new_cicilan, new_tempo.strftime("%Y-%m-%d"), kid))
+                        recalculate_kredit(kid) # Menghitung ulang sisa hutang
+                        conn.commit()
+                        log_aksi(st.session_state.username, "EDIT_AKAD_KREDIT", f"ID {kid}")
+                        flash("✅ Akad kredit diupdate! Jadwal angsuran telah disesuaikan.", "success")
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"❌ Gagal: {e}")
+
         df_bayar = pd.read_sql_query("""
-            SELECT tanggal, jumlah_bayar, denda, keterangan
+            SELECT id, tanggal, jumlah_bayar, denda, keterangan
             FROM pembayaran WHERE kredit_id=? ORDER BY id
         """, conn, params=(kid,))
 
@@ -1122,21 +1146,77 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         })
         st.dataframe(df_sched_show, use_container_width=True, hide_index=True)
 
+        # ================= TABEL RIWAYAT PEMBAYARAN (EDIT/DELETE) =================
         st.markdown('<div class="section-header"><h3>📜 Riwayat Pembayaran</h3></div>', unsafe_allow_html=True)
+        
         if not df_bayar.empty:
-            df_bayar_show = df_bayar.copy()
-            df_bayar_show['jumlah_bayar'] = df_bayar_show['jumlah_bayar'].apply(format_rp)
-            df_bayar_show['denda'] = df_bayar_show['denda'].apply(format_rp)
-            df_bayar_show = df_bayar_show.rename(columns={
-                'tanggal': 'Tanggal', 'jumlah_bayar': 'Jumlah Bayar',
-                'denda': 'Denda', 'keterangan': 'Keterangan'
-            })
-            st.dataframe(df_bayar_show, use_container_width=True, hide_index=True)
+            edited_bayar = st.data_editor(
+                df_bayar,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", disabled=True, width="small"),
+                    "tanggal": st.column_config.DateColumn("Tanggal", required=True, format="YYYY-MM-DD"),
+                    "jumlah_bayar": st.column_config.NumberColumn("Jumlah Bayar (Rp)", min_value=0, step=1000, format="Rp %d", required=True),
+                    "denda": st.column_config.NumberColumn("Denda (Rp)", min_value=0, step=1000, format="Rp %d", required=True),
+                    "keterangan": st.column_config.TextColumn("Keterangan"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                num_rows="dynamic",
+                key=f"editor_bayar_{kid}"
+            )
+            
+            if st.button("💾 Simpan Perubahan Riwayat Pembayaran"):
+                try:
+                    # Hapus data yang dihapus di UI
+                    current_ids = df_bayar['id'].tolist()
+                    edited_ids = [int(x) for x in edited_bayar['id'].dropna().tolist()]
+                    deleted_ids = list(set(current_ids) - set(edited_ids))
+                    for did in deleted_ids:
+                        c.execute("DELETE FROM pembayaran WHERE id=?", (did,))
+
+                    # Update atau Insert
+                    for _, row in edited_bayar.iterrows():
+                        if pd.isna(row['id']):
+                            # Baris Baru
+                            c.execute("INSERT INTO pembayaran (kredit_id, jumlah_bayar, denda, tanggal, keterangan) VALUES (?,?,?,?,?)",
+                                      (kid, row['jumlah_bayar'], row['denda'], str(row['tanggal']), row['keterangan']))
+                        else:
+                            # Edit Baris
+                            c.execute("UPDATE pembayaran SET jumlah_bayar=?, denda=?, tanggal=?, keterangan=? WHERE id=?",
+                                      (row['jumlah_bayar'], row['denda'], str(row['tanggal']), row['keterangan'], int(row['id'])))
+                    
+                    recalculate_kredit(kid)
+                    conn.commit()
+                    log_aksi(st.session_state.username, "EDIT_PEMBAYARAN", f"Kredit ID {kid}")
+                    flash("✅ Riwayat pembayaran disimpan & Sisa Hutang disesuaikan!", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal menyimpan pembayaran: {e}")
+            
             total_dibayar = df_bayar['jumlah_bayar'].sum() if not df_bayar.empty else 0
             st.success(f"💰 **Total sudah dibayar:** {format_rp(total_dibayar)}  |  **Sisa hutang:** {format_rp(d['sisa_hutang'])}")
         else:
             st.info("Belum ada pembayaran — ini masih akad awal.")
+            
+            # Form tambah pembayaran manual jika masih kosong
+            with st.form(f"form_add_bayar_{kid}"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    new_tgl = st.date_input("Tanggal")
+                with col2:
+                    new_jml = st.number_input("Jumlah Bayar (Rp)", step=1000.0)
+                with col3:
+                    new_denda = st.number_input("Denda (Rp)", step=1000.0, value=0.0)
+                if st.form_submit_button("➕ Tambah Pembayaran"):
+                    if new_jml > 0:
+                        c.execute("INSERT INTO pembayaran (kredit_id, jumlah_bayar, denda, tanggal, keterangan) VALUES (?,?,?,?,?)",
+                                  (kid, new_jml, new_denda, str(new_tgl), "Input Manual"))
+                        recalculate_kredit(kid)
+                        conn.commit()
+                        st.rerun()
 
+        # ================= PREVIEW CETAK HTML =================
         st.markdown('<div class="section-header"><h3>🧾 Preview Slip untuk Customer</h3></div>', unsafe_allow_html=True)
 
         rows_html = ""
