@@ -56,7 +56,7 @@ st.markdown("""
 # ==================== KONSTANTA ====================
 PAKAIAN_KATEGORI = ["Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik"]
 SEMUA_KATEGORI = ["Gadget", "Elektronik", "Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik", "Furnitur", "Motor", "Lainnya"]
-ALAMAT_TOKO = "Sekolaq Darat RT 007 Kampung Sekolaq Darat Kec. Sekolaq Darat, Kab. Kutai Barat, Prov. Kaltim"
+ALAMAT_TOKO = "Jl. Barong Tongkok, Kutai Barat"
 
 def is_pakaian(kat):
     return kat in PAKAIAN_KATEGORI
@@ -126,7 +126,7 @@ DEFAULT_PENGATURAN = {
     "markup_default_persen":     ("5.0",   "Markup default (%) untuk produk non-pakaian"),
     "bunga_flat_6bln_persen":    ("40.0",  "Bunga flat per 6 bulan (%) untuk kredit"),
     "dp_minimal_persen":         ("20.0",  "DP minimal (%) dari harga cash"),
-    "denda_per_hari_persen":     ("0.4",   "Denda keterlambatan per hari (%) dari cicilan"),
+    "denda_per_hari_persen":     ("0.4",   "Denda keterlambatan per hari (%) dari cicilan"), # Denda disesuaikan OJK
     "tenor_options":             ("1,2,3,6,12,18,24", "Pilihan tenor (bulan), pisahkan dengan koma"),
 }
 for k, (v, ket) in DEFAULT_PENGATURAN.items():
@@ -997,7 +997,8 @@ elif pilihan == "📤 Kredit Baru":
             except Exception as e:
                 conn.rollback()
                 st.error(f"❌ Gagal menyimpan kredit: {e}")
-                # ==================== 6. PEMBAYARAN CICILAN ====================
+
+# ==================== 6. PEMBAYARAN CICILAN ====================
 elif pilihan == "💰 Pembayaran Cicilan":
     st.markdown('<div class="main-header"><h1>💰 Pembayaran Cicilan</h1></div>', unsafe_allow_html=True)
     df_kredit = pd.read_sql_query("""
@@ -1072,8 +1073,7 @@ elif pilihan == "💰 Pembayaran Cicilan":
             st.dataframe(df_riw, use_container_width=True, hide_index=True)
         else:
             st.info("Belum ada pembayaran untuk akun ini")
-
-# ==================== 6b. CETAK SLIP KREDIT (PRINT & FOOTER) ====================
+            # ==================== 6b. CETAK SLIP KREDIT (PRINT & FOOTER) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional sesuai standar OJK</p></div>', unsafe_allow_html=True)
 
@@ -1101,9 +1101,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             WHERE k.id=?
         """, conn, params=(kid,)).iloc[0].fillna('-')
         
-        nik_cust = d['nik'] if d['nik'] != '-' else '6407064804950002'
-        tgl_lahir_cust = d['tanggal_lahir'] if d['tanggal_lahir'] != '-' else '03 April 1995'
-        status_kawin_cust = d['status_kawin'] if d['status_kawin'] != '-' else 'Cerai Hidup'
+        nik_cust = d['nik'] if d['nik'] != '-' else '.........................'
+        tgl_lahir_cust = d['tanggal_lahir'] if d['tanggal_lahir'] != '-' else '.........................'
+        status_kawin_cust = d['status_kawin'] if d['status_kawin'] != '-' else '.........................'
 
         st.markdown('<div class="section-header"><h3>✏️ Edit Manual Data Akad (Khusus Cetakan Ini)</h3></div>', unsafe_allow_html=True)
         with st.expander("Buka Form Edit Manual", expanded=False):
@@ -1120,7 +1120,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 m_bunga_bln = st.number_input("Bunga Flat / Bulan (%)", value=round(get_pengaturan_float("bunga_flat_6bln_persen", 40.0) / 6, 2), step=0.1, format="%.2f")
                 m_tempo = st.date_input("Jatuh Tempo", value=pd.to_datetime(d['jatuh_tempo']).date())
                 m_status = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(d['status']) if d['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
-                m_metode = st.radio("Metode", ["Tunai (Cash)", "Transfer Bank"], horizontal=True)
+                m_metode = st.radio("Metode", ["Tunai (Cash)", "Transfer Bank", "Kredit Angsuran"], index=2, horizontal=True)
 
             if st.button("💾 Simpan Perubahan Ini ke Database"):
                 try:
@@ -1141,7 +1141,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         tenor_asli = int(m_tenor)
         rate_bulan = m_bunga_bln / 100
         
-        tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor", value=False, help="Aktifkan untuk menampilkan 2 opsi tenor.")
+        # Secara default, tampilkan perbandingan Opsi A dan B seperti di PDF Tante Nilai
+        tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor (Opsi A & B)", value=True, help="Aktifkan untuk menampilkan 2 opsi tenor.")
         
         if tampilkan_banding:
             tenor_opsi_1 = 2
@@ -1163,14 +1164,18 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             
             html_tenor_options = f"""
             <div class="tenor-options">
-                <div class="tenor-card">
-                    <div class="tc-label">Opsi A</div>
+                <div class="tenor-card recommended">
+                    <div class="tc-label">Opsi A (Dipilih)</div>
                     <div class="tc-title">Tenor {tenor_opsi_1}× ({tenor_opsi_1} Bulan)</div>
+                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100)*tenor_opsi_1:.0f}%)</span><span class="v">{format_rp(total_1 - pokok_awal)}</span></div>
+                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_1)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_1)}</span></div>
                 </div>
-                <div class="tenor-card recommended">
+                <div class="tenor-card">
                     <div class="tc-label">Opsi B</div>
                     <div class="tc-title">Tenor {tenor_opsi_2}× ({tenor_opsi_2} Bulan)</div>
+                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100)*tenor_opsi_2:.0f}%)</span><span class="v">{format_rp(total_2 - pokok_awal)}</span></div>
+                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_2)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_2)}</span></div>
                 </div>
             </div>
@@ -1229,32 +1234,33 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <table class="party-table">
                 <tr>
                     <td class="label"><b>PIHAK PERTAMA</b></td>
-                    <td>: <b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di Sekolaq Darat RT 007 RW 000, Kelurahan/Desa Sekolaq Darat, Kecamatan Sekolaq Darat, Kabupaten Kutai Barat, Provinsi Kalimantan Timur. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</td>
+                    <td>: <b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</td>
                 </tr>
                 <tr>
                     <td class="label"><b>PIHAK KEDUA</b></td>
-                    <td>: <b>{d['cn'].upper()}</b>, lahir di Mencimai tanggal <b>{tgl_lahir_cust}</b>, Warga Negara Indonesia, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: <b>{nik_cust}</b>.</td>
+                    <td>: <b>{d['cn'].upper()}</b>, lahir di {tgl_lahir_cust}, Warga Negara Indonesia, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: <b>{nik_cust}</b>.</td>
                 </tr>
             </table>
             
             <p>Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan sebagai berikut:</p>
             
             <div class="pasal-title">PASAL 1<br>OBJEK PERJANJIAN</div>
-            <p>Pihak Pertama setuju untuk membiayai pembelian barang berupa <b>{d['pn']}</b> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
+            <p>Pihak Pertama setuju untuk membiayai pembelian barang berupa <b>{d['pn']}</b> dengan harga cash sebesar <b>{format_rp(m_harga_cash)}</b> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
             
             <div class="pasal-title">PASAL 2<br>KETENTUAN PEMBAYARAN</div>
             <ol class="pasal-list">
                 <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar <b>{format_rp(m_dp)}</b>.</li>
-                <li>Total kewajiban angsuran yang harus dibayar oleh Pihak Kedua adalah sebesar <b>{format_rp(total_1)}</b>.</li>
+                <li>Sisa Pokok Hutang setelah DP adalah sebesar <b>{format_rp(m_pokok)}</b>.</li>
+                <li>Suku bunga (flat) yang disepakati adalah <b>{m_bunga_bln}% per bulan</b> dari pokok hutang.</li>
                 <li>Jangka waktu pembiayaan adalah <b>{tenor_asli} (bulan)</b>, dengan angsuran bulanan sebesar <b>{format_rp(m_cicilan)}</b>.</li>
-                <li>Angsuran pertama wajib dibayarkan pada tanggal <b>{m_tempo.strftime('%d-%m-%Y')}</b> dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan tanggal <b>{(m_tempo + timedelta(days=30*(tenor_asli-1))).strftime('%d-%m-%Y')}</b>.</li>
+                <li>Angsuran pertama wajib dibayarkan pada tanggal <b>{m_tempo.strftime('%d-%m-%Y')}</b> dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya.</li>
                 <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: <b>Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT</b>.</li>
                 <li>Pihak Kedua dikenakan <b>Biaya Administrasi berupa bea materai sebesar Rp 10.000</b> yang posisinya <b>BERADA DI LUAR nominal angsuran</b>. Biaya tersebut akan ditagihkan bersamaan dengan setoran angsuran terakhir. Total pembayaran pada bulan ke-{tenor_asli} adalah sebesar <b>{format_rp(cicilan_terakhir)}</b>.</li>
             </ol>
             
             <div class="pasal-title">PASAL 3<br>DENDA DAN WANPRESTASI</div>
             <ol class="pasal-list">
-                <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <b>0,4% (nol koma empat persen) per hari</b> dari jumlah angsuran yang tertunggak, dengan total denda maksimal 100% dari pokok pembiayaan.</li>
+                <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari jumlah angsuran yang tertunggak.</li>
                 <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
                 <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke <b>Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking</b>, yang mengakibatkan Debitur masuk dalam daftar hitam (<i>blacklist</i>) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
             </ol>
@@ -1305,10 +1311,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <header class="hdr">
                 <div class="brand">
                     <h1>GRACE'S ELECTRONIC</h1>
-                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
+                    <div class="tag">CASH &amp; CREDIT - AUTHORIZED RETAILER</div>
                     <div class="addr">
-                        Sekolaq Darat RT 007 RW 000, Kel. Sekolaq Darat, Kec. Sekolaq Darat,<br>
-                        Kab. Kutai Barat, Prov. Kalimantan Timur<br>
+                        {ALAMAT_TOKO}<br>
                         HP/WA: 0822-9954-8411
                     </div>
                 </div>
@@ -1322,22 +1327,23 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div class="meta">
                 <div>Status: <b style="color:var(--success);">● {m_status.upper()}</b></div>
                 <div>Metode: <b>{m_metode}</b></div>
+                <div>Bunga Flat: <b>{m_bunga_bln}% / Bulan</b></div>
             </div>
 
             <div class="body">
                 <div class="grid-2">
                     <div class="card">
-                        <div class="card-title">👤 Data Customer</div>
+                        <div class="card-title">👤 Penerima / Customer</div>
                         <div class="kv-row"><div class="k">Nama</div><div class="v">{d['cn']}</div></div>
                         <div class="kv-row"><div class="k">Telepon</div><div class="v">{d['telepon']}</div></div>
-                        <div class="kv-row"><div class="k">NIK</div><div class="v">{nik_cust}</div></div>
                         <div class="kv-row"><div class="k">Alamat</div><div class="v" style="font-weight:400; font-size:10.5px;">{d['alamat']}</div></div>
                     </div>
                     <div class="card">
                         <div class="card-title">📱 Detail Produk</div>
-                        <div class="kv-row"><div class="k">Nama</div><div class="v">{d['pn']}</div></div>
+                        <div class="kv-row"><div class="k">Deskripsi</div><div class="v">{d['pn']}</div></div>
                         <div class="kv-row"><div class="k">SKU</div><div class="v">GRC-{d['produk_id']}</div></div>
                         <div class="kv-row"><div class="k">Garansi</div><div class="v">3 Bulan</div></div>
+                        <div class="kv-row"><div class="k">Harga</div><div class="v">{format_rp(m_harga_cash)}</div></div>
                     </div>
                 </div>
 
@@ -1356,7 +1362,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 {html_schedule}
                 
                 <div class="note-text">
-                    *Catatan: Terdapat Biaya Administrasi/Materai sebesar <b>Rp 10.000</b> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir. Total yang disetor pada bulan ke-{tenor_asli} adalah {format_rp(cicilan_terakhir)}.
+                    *Catatan: DP {format_rp(m_dp)} telah diterima. Pokok {format_rp(m_pokok)} diangsur sesuai tenor yang dipilih. Terdapat Biaya Administrasi/Materai sebesar <b>Rp 10.000</b> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir. Total yang disetor pada bulan ke-{tenor_asli} adalah {format_rp(cicilan_terakhir)}.
                 </div>
 
                 <div class="bank-box">
@@ -1383,10 +1389,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <header class="hdr">
                 <div class="brand">
                     <h1>GRACE'S ELECTRONIC</h1>
-                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
+                    <div class="tag">CASH &amp; CREDIT - AUTHORIZED RETAILER</div>
                     <div class="addr">
-                        Sekolaq Darat RT 007 RW 000, Kel. Sekolaq Darat, Kec. Sekolaq Darat,<br>
-                        Kab. Kutai Barat, Prov. Kalimantan Timur<br>
+                        {ALAMAT_TOKO}<br>
                         HP/WA: 0822-9954-8411
                     </div>
                 </div>
@@ -1481,10 +1486,10 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .info-box {{ background: var(--danger-light); border: 1px solid #fecaca; border-left: 4px solid var(--danger); border-radius: 6px; padding: 12px 16px; font-size: 10.5px; color: #991b1b; }}
             .info-box strong {{ display: block; margin-bottom: 2px; font-size: 11px; }}
 
-            .tenor-options {{ display: grid; gap: 8px; margin-bottom: 16px; }}
+            .tenor-options {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }}
             .tenor-card {{ position: relative; border: 1.5px solid #d1d5db; border-radius: 8px; padding: 12px 16px; }}
             .tenor-card.recommended {{ border-color: #1e3a8a; }}
-            .tenor-card.recommended::before {{ content: 'REKOMENDASI'; position: absolute; top: -1.5px; right: -1.5px; background: #b8956a; color: #fff; font-size: 7.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; border-radius: 0 6px 0 6px; }}
+            .tenor-card.recommended::before {{ content: 'DIPILIH'; position: absolute; top: -1.5px; right: -1.5px; background: #b8956a; color: #fff; font-size: 7.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; border-radius: 0 6px 0 6px; }}
             .tc-label {{ font-size: 9px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }}
             .tc-title {{ font-family: Georgia, serif; font-size: 14px; font-weight: 700; color: #1a2b47; margin: 2px 0 6px; }}
             .tc-row {{ display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; }}
@@ -1517,6 +1522,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .cert-sig-barcode {{ background: #fff; padding: 2px; border-radius: 4px; display: flex; justify-content: center; width: 100%; }}
             .ematerai-box {{ width: 180px; height: 75px; margin: 0 auto; border: 1px dashed #94a3b8; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #94a3b8; font-family: 'Inter', sans-serif; border-radius: 6px; background: #f8fafc; }}
             .footer {{ padding: 12px 24px; background: #f8fafc; border-top: 1px solid var(--border); text-align: center; font-size: 9.5px; color: var(--text-muted); }}
+            
             @media print {{
                 @page {{ size: A4 portrait; margin: 8mm 12mm; }}
                 body {{ background: #fff; padding: 0; margin: 0; font-size: 10px; }}
@@ -1549,6 +1555,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 .doc-title {{ margin-bottom: 10px; }}
                 .pasal-title {{ margin-top: 10px; margin-bottom: 4px; }}
                 .signature-area {{ margin-top: 20px; }}
+                .tenor-options {{ gap: 10px; }}
                 * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
             }}
         </style>
