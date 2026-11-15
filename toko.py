@@ -476,6 +476,49 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
 elif pilihan == "🏠 Dashboard":
     st.markdown(f'<div class="main-header"><h1>🏠 Dashboard Utama</h1><p>Selamat datang kembali, <b>{st.session_state.nama}</b> 👋</p></div>', unsafe_allow_html=True)
 
+    # === FITUR BARU: SIMULASI SKEMA (BISA HIDE RINCIAN) ===
+    with st.expander("🧮 Simulasi Skema Kredit & Cash (Bisa Diedit)", expanded=True):
+        st.markdown("Gunakan kalkulator ini untuk mensimulasikan skema ke customer. Anda bisa mengedit nilai di bawah dan menyembunyikan rincian tertentu untuk *Mode Presentasi Pelanggan*.")
+        
+        col_sim1, col_sim2, col_sim3 = st.columns(3)
+        with col_sim1:
+            sim_modal = st.number_input("Harga Modal (Rp)", min_value=0.0, value=1000000.0, step=100000.0)
+            sim_dp_persen = st.number_input("DP (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+        with col_sim2:
+            sim_markup = st.number_input("Markup (%)", min_value=0.0, value=10.0, step=1.0)
+            sim_harga_jual = st.number_input("Harga Jual Override (Rp) - (0 = pakai markup)", min_value=0.0, value=0.0, step=100000.0)
+        with col_sim3:
+            sim_tenor = st.selectbox("Tenor (Bulan)", get_tenor_list(), index=min(3, len(get_tenor_list())-1))
+            sim_bunga_6bln = st.number_input("Bunga Flat / 6 Bln (%)", min_value=0.0, value=40.0, step=1.0)
+        
+        hide_detail = st.toggle("🙈 Sembunyikan Rincian Sensitif (Mode Presentasi Pelanggan)", value=False, help="Jika aktif, hanya Harga Cash, DP, dan Cicilan yang muncul. Bunga, Pokok, dan Total Hutang disembunyikan.")
+
+        # Kalkulasi Simulasi
+        h_cash = sim_harga_jual if sim_harga_jual > 0 else round(sim_modal * (1 + sim_markup/100), -2)
+        dp_val = round(h_cash * sim_dp_persen / 100, -2)
+        pokok = round(h_cash - dp_val, -2)
+        rate_bulan = (sim_bunga_6bln / 100) / 6
+        total_bunga = round(pokok * rate_bulan * sim_tenor, -2)
+        total_hutang = pokok + total_bunga
+        cicilan = round(total_hutang / sim_tenor, -2)
+
+        st.markdown("### Hasil Simulasi:")
+        html_sim = '<div class="metric-grid">'
+        html_sim += metric_card("Harga Cash", format_rp(h_cash), "card-blue")
+        html_sim += metric_card(f"DP ({sim_dp_persen}%)", format_rp(dp_val), "card-purple")
+        html_sim += metric_card(f"Cicilan ({sim_tenor}x)", format_rp(cicilan), "card-pink")
+        
+        if not hide_detail:
+            html_sim += metric_card("Pokok Hutang", format_rp(pokok), "card-dark")
+            html_sim += metric_card("Total Bunga", format_rp(total_bunga), "card-orange")
+            html_sim += metric_card("Total Hutang", format_rp(total_hutang), "card-dark")
+            
+        html_sim += '</div>'
+        st.markdown(html_sim, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # === METRIK UTAMA DASHBOARD ===
     total_produk   = c.execute("SELECT COUNT(*) FROM produk").fetchone()[0]
     total_stok     = c.execute("SELECT COALESCE(SUM(stok),0) FROM produk").fetchone()[0]
     total_customer = c.execute("SELECT COUNT(*) FROM customer").fetchone()[0]
@@ -682,22 +725,27 @@ elif pilihan == "📥 Barang Masuk":
         
         if not df_in.empty:
             st.markdown("**✏️ Edit / Hapus Barang Masuk**")
-            opsi_in = {f"ID #{r['id']} - {r['produk']} - {r['jumlah']} unit ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah']) for _, r in df_in.iterrows()}
+            opsi_in = {f"ID #{r['id']} - {r['produk']} - {r['jumlah']} unit ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah'], r['tanggal']) for _, r in df_in.iterrows()}
             pilih_in = st.selectbox("Pilih Riwayat Barang Masuk", list(opsi_in.keys()), key="sel_edit_in")
-            id_in, pid_in, qty_in = opsi_in[pilih_in]
+            id_in, pid_in, qty_in, tgl_in = opsi_in[pilih_in]
             
             with st.form("form_edit_in"):
-                new_qty = st.number_input("Jumlah Masuk Baru", min_value=1, value=int(qty_in), step=1)
+                col_ed1, col_ed2 = st.columns(2)
+                with col_ed1:
+                    new_qty = st.number_input("Jumlah Masuk Baru", min_value=1, value=int(qty_in), step=1)
+                with col_ed2:
+                    new_tgl_in = st.date_input("Tanggal Masuk Baru", value=pd.to_datetime(tgl_in).date())
+                    
                 colA, colB = st.columns(2)
                 with colA:
-                    sub_edit_in = st.form_submit_button("💾 Update Jumlah")
+                    sub_edit_in = st.form_submit_button("💾 Update Data")
                 with colB:
                     sub_hapus_in = st.form_submit_button("🗑️ Hapus Riwayat")
                     
                 if sub_edit_in:
                     try:
                         selisih = new_qty - qty_in
-                        c.execute("UPDATE transaksi_in SET jumlah=? WHERE id=?", (new_qty, id_in))
+                        c.execute("UPDATE transaksi_in SET jumlah=?, tanggal=? WHERE id=?", (new_qty, new_tgl_in.strftime("%Y-%m-%d"), id_in))
                         c.execute("UPDATE produk SET stok = stok + ? WHERE id=?", (selisih, pid_in))
                         conn.commit()
                         flash("✅ Barang masuk diupdate & stok disesuaikan!", "success")
@@ -855,7 +903,7 @@ elif pilihan == "🛒 Jual Cash":
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
 
-                st.markdown("**✏️ Edit Harga / Nominal Transaksi**")
+                st.markdown("**✏️ Edit Harga / Jumlah / Nominal Transaksi**")
                 opsi_edit_cash = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": r['id'] for _, r in df_riw_all.iterrows()}
                 pilih_edit_cash = st.selectbox("Pilih transaksi untuk diedit:", list(opsi_edit_cash.keys()), key="sel_edit_cash")
                 id_edit_cash = opsi_edit_cash[pilih_edit_cash]
@@ -864,27 +912,40 @@ elif pilihan == "🛒 Jual Cash":
                 modal_asli = c.execute("SELECT harga_modal FROM produk WHERE id=?", (detail_cash['produk_id'],)).fetchone()[0]
                 
                 with st.form("form_edit_cash"):
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
                         new_hj = st.number_input("Harga Jual Satuan Baru (Rp)", value=float(detail_cash['harga_jual_satuan']), step=1000.0)
                     with col2:
+                        new_qty_cash = st.number_input("Jumlah Beli Baru", min_value=1, value=int(detail_cash['jumlah']), step=1)
+                    with col3:
                         new_uang = st.number_input("Uang Diterima Baru (Rp)", value=float(detail_cash['uang_bayar']), step=10000.0)
                     
                     if st.form_submit_button("💾 Simpan Perubahan"):
                         try:
-                            new_total = new_hj * detail_cash['jumlah']
-                            new_profit = (new_hj - modal_asli) * detail_cash['jumlah']
-                            new_kembalian = new_uang - new_total
+                            selisih_qty = new_qty_cash - detail_cash['jumlah']
                             
-                            if new_uang < new_total:
-                                st.error("❌ Uang diterima kurang dari total belanja baru!")
+                            # Cek stok jika jumlah bertambah
+                            stok_tersedia = c.execute("SELECT stok FROM produk WHERE id=?", (detail_cash['produk_id'],)).fetchone()[0]
+                            
+                            if selisih_qty > 0 and stok_tersedia < selisih_qty:
+                                st.error(f"❌ Stok tidak mencukupi untuk menambah {selisih_qty} unit! Sisa stok: {stok_tersedia}")
                             else:
-                                c.execute("""UPDATE transaksi_cash SET harga_jual_satuan=?, total_harga=?, uang_bayar=?, kembalian=?, laba=? WHERE id=?""",
-                                          (new_hj, new_total, new_uang, new_kembalian, new_profit, id_edit_cash))
-                                conn.commit()
-                                log_aksi(st.session_state.username, "EDIT_CASH", f"ID {id_edit_cash}")
-                                flash("✅ Transaksi berhasil diupdate & Profit disesuaikan!", "success")
-                                st.rerun()
+                                new_total = new_hj * new_qty_cash
+                                new_profit = (new_hj - modal_asli) * new_qty_cash
+                                new_kembalian = new_uang - new_total
+                                
+                                if new_uang < new_total:
+                                    st.error("❌ Uang diterima kurang dari total belanja baru!")
+                                else:
+                                    # Sesuaikan stok
+                                    c.execute("UPDATE produk SET stok = stok - ? WHERE id = ?", (selisih_qty, detail_cash['produk_id']))
+                                    
+                                    c.execute("""UPDATE transaksi_cash SET harga_jual_satuan=?, jumlah=?, total_harga=?, uang_bayar=?, kembalian=?, laba=? WHERE id=?""",
+                                              (new_hj, new_qty_cash, new_total, new_uang, new_kembalian, new_profit, id_edit_cash))
+                                    conn.commit()
+                                    log_aksi(st.session_state.username, "EDIT_CASH", f"ID {id_edit_cash}")
+                                    flash("✅ Transaksi berhasil diupdate, stok & profit disesuaikan!", "success")
+                                    st.rerun()
                         except Exception as e:
                             conn.rollback()
                             st.error(f"❌ Gagal: {e}")
@@ -1109,6 +1170,20 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         with col_set2:
             tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor", value=True, help="Aktifkan untuk menampilkan 2 opsi tenor (misal 2x & 3x) untuk perbandingan. Matikan untuk hanya menampilkan 1 tenor yang dipilih.")
         
+        # FITUR BARU: Edit Bunga Flat per bulan
+        bunga_flat_owner = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
+        default_rate_bulan = round(bunga_flat_owner / 6, 2)
+        
+        bunga_input = st.number_input(
+            "⚙️ Edit Bunga Flat per Bulan (%) - *Khusus Cetakan Ini*", 
+            min_value=0.0, 
+            value=float(default_rate_bulan), 
+            step=0.1, 
+            format="%.2f",
+            help="Anda bisa mengubah angka ini tanpa merubah pengaturan global di menu Owner."
+        )
+        rate_bulan = bunga_input / 100
+        
         denda_harian = get_pengaturan_float("denda_per_hari_persen", 1.0)
 
         # ================= FORM EDIT AKAD KREDIT =================
@@ -1144,9 +1219,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         
         tenor_asli = int(d['tenor'])
         total_asli = float(d['total_hutang'])
-        
-        bunga_flat_owner = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
-        rate_bulan = (bunga_flat_owner / 100) / 6
         
         if tampilkan_banding:
             tenor_opsi_1 = 2
@@ -1893,7 +1965,7 @@ elif pilihan == "📊 Laporan & Analitik":
         st.markdown('<div class="section-header"><h3>✏️ Edit / Hapus Transaksi Terjual (Kredit)</h3></div>', unsafe_allow_html=True)
         
         df_kredit_all = pd.read_sql_query("""
-            SELECT k.id, c.nama as customer, p.nama as produk, k.harga_cash, k.dp, 
+            SELECT k.id, c.nama as customer, p.nama as produk, k.harga_cash, k.dp, k.pokok_hutang,
                    k.total_hutang, k.sisa_hutang, k.status, k.jatuh_tempo, k.tenor, k.cicilan_bulan
             FROM kredit k 
             JOIN customer c ON k.customer_id = c.id 
@@ -1909,15 +1981,19 @@ elif pilihan == "📊 Laporan & Analitik":
             detail_k = df_kredit_all[df_kredit_all['id'] == kid_edit].iloc[0]
 
             with st.form("form_edit_kredit"):
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns(3)
                 with c1:
                     e_status = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(detail_k['status']) if detail_k['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
                     e_jatuh_tempo = st.date_input("Jatuh Tempo", value=pd.to_datetime(detail_k['jatuh_tempo']).date())
-                    e_total = st.number_input("Total Hutang (Rp)", value=float(detail_k['total_hutang']), step=10000.0)
                 with c2:
-                    e_sisa = st.number_input("Sisa Hutang (Rp)", value=float(detail_k['sisa_hutang']), step=10000.0)
+                    e_harga_cash = st.number_input("Harga Cash (Rp)", value=float(detail_k['harga_cash']), step=10000.0)
+                    e_dp = st.number_input("DP Dibayar (Rp)", value=float(detail_k['dp']), step=10000.0)
+                    e_pokok = st.number_input("Pokok Hutang (Rp)", value=float(detail_k['pokok_hutang']), step=10000.0)
+                with c3:
+                    e_total = st.number_input("Total Hutang (Rp)", value=float(detail_k['total_hutang']), step=10000.0)
                     e_cicilan = st.number_input("Cicilan/Bulan (Rp)", value=float(detail_k['cicilan_bulan']), step=10000.0)
                     e_tenor = st.number_input("Tenor (Bulan)", value=int(detail_k['tenor']), step=1)
+                    e_sisa = st.number_input("Sisa Hutang (Rp)", value=float(detail_k['sisa_hutang']), step=10000.0)
                 
                 st.info("⚠️ **Perhatian:** Menghapus transaksi terjual akan mengembalikan stok produk (+1) dan **menghapus semua riwayat pembayaran** untuk transaksi ini.")
                 
@@ -1927,8 +2003,8 @@ elif pilihan == "📊 Laporan & Analitik":
                 if btn_edit:
                     if e_status == "Lunas": e_sisa = 0.0
                     try:
-                        c.execute("""UPDATE kredit SET status=?, jatuh_tempo=?, total_hutang=?, sisa_hutang=?, cicilan_bulan=?, tenor=? WHERE id=?""",
-                                  (e_status, e_jatuh_tempo.strftime("%Y-%m-%d"), e_total, e_sisa, e_cicilan, e_tenor, kid_edit))
+                        c.execute("""UPDATE kredit SET status=?, jatuh_tempo=?, harga_cash=?, dp=?, pokok_hutang=?, total_hutang=?, sisa_hutang=?, cicilan_bulan=?, tenor=? WHERE id=?""",
+                                  (e_status, e_jatuh_tempo.strftime("%Y-%m-%d"), e_harga_cash, e_dp, e_pokok, e_total, e_sisa, e_cicilan, e_tenor, kid_edit))
                         conn.commit()
                         log_aksi(st.session_state.username, "EDIT_KREDIT", f"ID {kid_edit}")
                         flash("✅ Transaksi terjual berhasil diupdate!", "success")
