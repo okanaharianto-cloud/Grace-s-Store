@@ -107,6 +107,10 @@ c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas
              (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan
              (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
+# Tabel baru untuk menyimpan jadwal kustom
+c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, 
+              ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
 conn.commit()
 
 # ==================== MIGRASI KOLOM ====================
@@ -246,6 +250,14 @@ def build_jadwal_angsuran(total_hutang, cicilan_bulan, tenor, tanggal_kredit_str
             "sisa": sisa,
         })
     return schedule
+
+def get_schedule_for_invoice(kredit_id, opsi, total, cicilan, tenor, tgl_str):
+    # Cek apakah ada jadwal kustom di database
+    df_custom = pd.read_sql_query("SELECT ke, jatuh_tempo, angsuran, sisa FROM jadwal_kustom WHERE kredit_id=? AND opsi=? ORDER BY ke", conn, params=(kredit_id, opsi))
+    if not df_custom.empty:
+        return df_custom
+    else:
+        return pd.DataFrame(build_jadwal_angsuran(total, cicilan, tenor, tgl_str))
 
 # Seed admin
 c.execute("SELECT COUNT(*) FROM users")
@@ -1221,32 +1233,48 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             
             with col_s1:
                 st.markdown("**Tabel Opsi A**")
-                df_sched_1 = pd.DataFrame(build_jadwal_angsuran(total_1, cicilan_1, tenor_opsi_1, tanggal_kredit_str))
+                df_sched_1 = get_schedule_for_invoice(kid, 'A', total_1, cicilan_1, tenor_opsi_1, tanggal_kredit_str)
                 df_sched_1['jatuh_tempo'] = pd.to_datetime(df_sched_1['jatuh_tempo'], format="%d-%m-%Y").dt.date
                 edited_sched_1 = st.data_editor(df_sched_1, disabled=["ke", "sisa"], hide_index=True, key="edit_sched_1",
                     column_config={"ke": "Ke", "jatuh_tempo": "Tgl Tempo", "angsuran": "Nominal", "sisa": "Sisa"})
                 
-                # Hitung ulang total A dan sisa
-                total_1_edit = edited_sched_1['angsuran'].sum()
-                sisa_a = total_1_edit
-                for i in range(len(edited_sched_1)):
-                    sisa_a -= edited_sched_1.iloc[i]['angsuran']
-                    edited_sched_1.at[i, 'sisa'] = max(sisa_a, 0)
-                    
             with col_s2:
                 st.markdown("**Tabel Opsi B**")
-                df_sched_2 = pd.DataFrame(build_jadwal_angsuran(total_2, cicilan_2, tenor_opsi_2, tanggal_kredit_str))
+                df_sched_2 = get_schedule_for_invoice(kid, 'B', total_2, cicilan_2, tenor_opsi_2, tanggal_kredit_str)
                 df_sched_2['jatuh_tempo'] = pd.to_datetime(df_sched_2['jatuh_tempo'], format="%d-%m-%Y").dt.date
                 edited_sched_2 = st.data_editor(df_sched_2, disabled=["ke", "sisa"], hide_index=True, key="edit_sched_2",
                     column_config={"ke": "Ke", "jatuh_tempo": "Tgl Tempo", "angsuran": "Nominal", "sisa": "Sisa"})
                     
-                total_2_edit = edited_sched_2['angsuran'].sum()
-                sisa_b = total_2_edit
-                for i in range(len(edited_sched_2)):
-                    sisa_b -= edited_sched_2.iloc[i]['angsuran']
-                    edited_sched_2.at[i, 'sisa'] = max(sisa_b, 0)
+            if st.button("💾 Simpan Jadwal Kustom (Opsi A & B)"):
+                try:
+                    # Hapus jadwal lama untuk opsi A & B kredit ini
+                    c.execute("DELETE FROM jadwal_kustom WHERE kredit_id=? AND opsi IN ('A', 'B')", (kid,))
+                    
+                    # Simpan Opsi A
+                    sisa_a = edited_sched_1['angsuran'].sum()
+                    for idx, row in edited_sched_1.iterrows():
+                        sisa_a -= row['angsuran']
+                        c.execute("INSERT INTO jadwal_kustom (kredit_id, opsi, ke, jatuh_tempo, angsuran, sisa) VALUES (?,?,?,?,?,?)",
+                                  (kid, 'A', row['ke'], row['jatuh_tempo'].strftime("%d-%m-%Y"), row['angsuran'], max(sisa_a, 0)))
+                        
+                    # Simpan Opsi B
+                    sisa_b = edited_sched_2['angsuran'].sum()
+                    for idx, row in edited_sched_2.iterrows():
+                        sisa_b -= row['angsuran']
+                        c.execute("INSERT INTO jadwal_kustom (kredit_id, opsi, ke, jatuh_tempo, angsuran, sisa) VALUES (?,?,?,?,?,?)",
+                                  (kid, 'B', row['ke'], row['jatuh_tempo'].strftime("%d-%m-%Y"), row['angsuran'], max(sisa_b, 0)))
+                        
+                    conn.commit()
+                    flash("✅ Jadwal Kustom berhasil disimpan ke database!", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal menyimpan jadwal: {e}")
             
-            # Generate HTML dari hasil edit
+            # Generate HTML dari hasil edit (diambil dari edited_sched)
+            total_1_edit = edited_sched_1['angsuran'].sum()
+            total_2_edit = edited_sched_2['angsuran'].sum()
+            
             html_tenor_options = f"""
             <div class="tenor-options">
                 <div class="tenor-card">
@@ -1289,20 +1317,29 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
             """
         else:
-            schedule_1 = build_jadwal_angsuran(total_asli, m_cicilan, tenor_asli, tanggal_kredit_str)
-            
             # --- FITUR BARU: EDIT JADWAL ANGSURAN (SINGLE) ---
             st.markdown("### ✏️ Edit Tabel Jadwal")
-            df_sched_1 = pd.DataFrame(schedule_1)
+            df_sched_1 = get_schedule_for_invoice(kid, 'SINGLE', total_asli, m_cicilan, tenor_asli, tanggal_kredit_str)
             df_sched_1['jatuh_tempo'] = pd.to_datetime(df_sched_1['jatuh_tempo'], format="%d-%m-%Y").dt.date
             edited_sched_1 = st.data_editor(df_sched_1, disabled=["ke", "sisa"], hide_index=True, key="edit_sched_1_single",
                 column_config={"ke": "Ke", "jatuh_tempo": "Tgl Tempo", "angsuran": "Nominal", "sisa": "Sisa"})
                 
+            if st.button("💾 Simpan Jadwal Kustom"):
+                try:
+                    c.execute("DELETE FROM jadwal_kustom WHERE kredit_id=? AND opsi='SINGLE'", (kid,))
+                    sisa_a = edited_sched_1['angsuran'].sum()
+                    for idx, row in edited_sched_1.iterrows():
+                        sisa_a -= row['angsuran']
+                        c.execute("INSERT INTO jadwal_kustom (kredit_id, opsi, ke, jatuh_tempo, angsuran, sisa) VALUES (?,?,?,?,?,?)",
+                                  (kid, 'SINGLE', row['ke'], row['jatuh_tempo'].strftime("%d-%m-%Y"), row['angsuran'], max(sisa_a, 0)))
+                    conn.commit()
+                    flash("✅ Jadwal Kustom berhasil disimpan ke database!", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal menyimpan jadwal: {e}")
+            
             total_1_edit = edited_sched_1['angsuran'].sum()
-            sisa_a = total_1_edit
-            for i in range(len(edited_sched_1)):
-                sisa_a -= edited_sched_1.iloc[i]['angsuran']
-                edited_sched_1.at[i, 'sisa'] = max(sisa_a, 0)
             
             html_tenor_options = f"""
             <div class="tenor-options" style="grid-template-columns: 1fr;">
@@ -2043,10 +2080,11 @@ elif pilihan == "📊 Laporan & Analitik":
                     try:
                         c.execute("UPDATE produk SET stok = stok + 1 WHERE id = (SELECT produk_id FROM kredit WHERE id=?)", (kid_edit,))
                         c.execute("DELETE FROM pembayaran WHERE kredit_id=?", (kid_edit,))
+                        c.execute("DELETE FROM jadwal_kustom WHERE kredit_id=?", (kid_edit,))
                         c.execute("DELETE FROM kredit WHERE id=?", (kid_edit,))
                         conn.commit()
                         log_aksi(st.session_state.username, "HAPUS_KREDIT", f"ID {kid_edit}")
-                        flash("🗑️ Transaksi dihapus, stok dikembalikan, dan riwayat pembayaran dibersihkan!", "success")
+                        flash("🗑️ Transaksi dihapus, stok dikembalikan, dan riwayat dibersihkan!", "success")
                         st.rerun()
                     except Exception as e:
                         conn.rollback()
@@ -2319,6 +2357,7 @@ elif pilihan == "💾 Backup, Cetak & Impor":
                     c.execute("DELETE FROM customer")
                     c.execute("DELETE FROM produk")
                     c.execute("DELETE FROM log_aktivitas")
+                    c.execute("DELETE FROM jadwal_kustom")
                     conn.commit()
                     log_aksi(st.session_state.username, "HAPUS_SEMUA_DATA", "Data di-reset")
                     flash("🗑️ Seluruh data berhasil dihapus. Aplikasi bersih seperti baru!", "success")
