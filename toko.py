@@ -56,6 +56,8 @@ st.markdown("""
 PAKAIAN_KATEGORI = ["Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik"]
 SEMUA_KATEGORI = ["Gadget", "Elektronik", "Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik", "Furnitur", "Motor", "Lainnya"]
 
+ALAMAT_TOKO = "Sekolaq Darat RT 007 Kampung Sekolaq Darat Kec. Sekolaq Darat, Kab. Kutai Barat, Prov. Kaltim"
+
 def is_pakaian(kat):
     return kat in PAKAIAN_KATEGORI
 
@@ -1380,7 +1382,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         materai_html = ""
         if m_total_hutang >= 5000000:
             # Generate unique serial number for E-Materai
-            import uuid
             serial_materai = f"EM-{uuid.uuid4().hex[:8].upper()}-{datetime.now().strftime('%Y')}"
             materai_html = f"""
             <div class="materai-box">
@@ -1391,7 +1392,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
             """
             
-        # Teks Perjanjian (Hitam di atas putih)
+        # Teks Perjanjian (Hitam di atas putih, tanpa nominal bunga)
         perjanjian_html = f"""
         <div class="agreement-container">
             <div class="agreement-title">SURAT PERJANJIAN KREDIT BARANG & SURAT KUASA PEMBEBANAN</div>
@@ -1402,7 +1403,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <table class="agreement-table">
                 <tr>
                     <td style="width: 150px; vertical-align: top;"><b>PIHAK PERTAMA (Kreditur)</b></td>
-                    <td style="vertical-align: top;">: <b>Grace's Electronic</b>, berkedudukan di Jl. Barong Tongkok, Kutai Barat.</td>
+                    <td style="vertical-align: top;">: <b>Grace's Electronic</b>, berkedudukan di {ALAMAT_TOKO}.</td>
                 </tr>
                 <tr>
                     <td style="vertical-align: top;"><b>PIHAK KEDUA (Debitur)</b></td>
@@ -1418,13 +1419,13 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 
                 <b>Pasal 2 - Ketentuan Pembiayaan (Sesuai Standar OJK)</b>
                 <p>1. Uang Muka (DP) yang telah dibayarkan adalah sebesar <b>{format_rp(m_dp)}</b>.</p>
-                <p>2. Pokok Hutang (Sisa Harga) adalah sebesar <b>{format_rp(m_pokok)}</b>.</p>
-                <p>3. Bunga Flat disepakati sebesar <b>{m_bunga_bln:.2f}% per bulan</b> dari Pokok Hutang.</p>
-                <p>4. Total Kewajiban (Pokok + Bunga) adalah sebesar <b>{format_rp(m_total_hutang)}</b>.</p>
-                <p>5. Jangka waktu angsuran (Tenor) adalah <b>{m_tenor} bulan</b>, dengan nominal angsuran sebesar <b>{format_rp(m_cicilan)} per bulan</b>.</p>
+                <p>2. Sisa pembayaran yang harus dilunasi adalah sebesar <b>{format_rp(m_pokok)}</b> (Pokok).</p>
+                <p>3. Pihak Kedua setuju untuk melunasi total kewajiban (angsuran + bunga) sebesar <b>{format_rp(m_total_hutang)}</b>.</p>
+                <p>4. Pelunasan dilakukan secara angsuran selama <b>{m_tenor} bulan</b>, dengan nominal angsuran sebesar <b>{format_rp(m_cicilan)} per bulan</b>.</p>
+                <p>5. Pembayaran angsuran perdana wajib dilakukan pada tanggal <b>{m_tempo.strftime('%d-%m-%Y')}</b> dan selambat-lambatnya setiap tanggal yang sama pada bulan berikutnya.</p>
                 
                 <b>Pasal 3 - Jatuh Tempo & Denda</b>
-                <p>1. Angsuran wajib dibayarkan setiap tanggal jatuh tempo sesuai jadwal yang telah disepakati, dimulai pada tanggal <b>{m_tempo.strftime('%d-%m-%Y')}</b>.</p>
+                <p>1. Angsuran wajib dibayarkan setiap tanggal jatuh tempo sesuai jadwal yang telah disepakati.</p>
                 <p>2. Keterlambatan pembayaran dikenakan denda sebesar <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari nominal angsuran yang tertunggak.</p>
                 
                 <b>Pasal 4 - Wanprestasi</b>
@@ -1458,7 +1459,112 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         </div>
         """
 
-        # ================= INVOICE HTML (DESAIN PROFESIONAL) =================
+        # ================= INVOICE HTML (HALAMAN 1) =================
+        html_page1 = f"""
+        <div class="page">
+            <header class="hdr">
+                <div class="brand">
+                    <h1>Grace's Electronic</h1>
+                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
+                    <div class="addr">{ALAMAT_TOKO} • HP/WA: 0822-9954-8411</div>
+                </div>
+                <div class="title-box">
+                    <div class="badge-inv">Invoice Kredit</div>
+                    <div class="inv-no">#GRC-INV-{kid}</div>
+                    <div class="inv-date">{datetime.now().strftime('%d %B %Y · %H:%M')} WITA</div>
+                </div>
+            </header>
+
+            <div class="meta">
+                <div>Status: <b style="color:#059669;">● {m_status.upper()}</b></div>
+                <div>Metode: <b>{m_metode}</b></div>
+                <div style="{hide_style}">Bunga Flat: <b>{(rate_bulan*100):.2f}% / bln</b></div>
+            </div>
+
+            <div class="body">
+                <!-- Customer + Product -->
+                <div class="top-grid">
+                    <div class="sec">
+                        <div class="sec-title"><span class="ic">👤</span> Customer</div>
+                        <div class="kv">
+                            <div class="k">Nama</div><div class="v">{d['cn']}</div>
+                            <div class="k">Telepon</div><div class="v">{d['telepon']}</div>
+                            <div class="k">Alamat</div><div class="v">{d['alamat']}</div>
+                        </div>
+                    </div>
+                    <div class="sec">
+                        <div class="sec-title"><span class="ic">📱</span> Produk</div>
+                        <div class="kv">
+                            <div class="k">Nama</div><div class="v">{d['pn']}</div>
+                            <div class="k">SKU</div><div class="v">GRC-{d['produk_id']}</div>
+                            <div class="k">Garansi</div><div class="v">3 Bulan</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="summary" style="grid-template-columns: {grid_cols};">
+                    <div class="sum-card" style="{hide_style}"><div class="lbl">Harga Cash</div><div class="val">{format_rp(m_harga_cash)}</div></div>
+                    <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(m_dp)}</div></div>
+                    <div class="sum-card blue" style="{hide_style}"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(m_pokok)}</div></div>
+                    <div class="sum-card amber" style="{hide_style}"><div class="lbl">Bunga Flat</div><div class="val">{(rate_bulan*100):.2f}% / bln</div></div>
+                </div>
+
+                <!-- Pilihan Tenor -->
+                {html_tenor_options}
+
+                <!-- Jadwal Angsuran -->
+                {html_schedule}
+            </div>
+
+            <!-- Terms -->
+            <div class="terms-section">
+                <div class="terms-title">Syarat &amp; Ketentuan Tambahan</div>
+                <ol class="terms-list">
+                    <li><b>Metode:</b> Tunai atau transfer bank sesuai kesepakatan.</li>
+                    <li><b>Jatuh Tempo:</b> Setiap 30 hari, dimulai {m_tempo.strftime('%d-%m-%Y')}.</li>
+                    <li style="{hide_style}"><b>Bunga:</b> Flat {(rate_bulan*100):.2f}% per bulan dari pokok hutang.</li>
+                    <li><b>Keterlambatan:</b> Denda {get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari dari angsuran.</li>
+                </ol>
+            </div>
+
+            <footer class="footer">
+                <div class="footer-brand">GRACE'S ELECTRONIC</div>
+                <div>Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan untuk pembayaran berikutnya.</div>
+                <div style="font-size:7.5px; margin-top:2px;">Pemalsuan dokumen dapat ditindak sesuai hukum yang berlaku di Republik Indonesia.</div>
+            </footer>
+        </div>
+        """
+
+        # ================= SURAT PERJANJIAN HTML (HALAMAN 2) =================
+        html_page2 = f"""
+        <div class="page" style="page-break-before: always;">
+            <header class="hdr">
+                <div class="brand">
+                    <h1>Grace's Electronic</h1>
+                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
+                    <div class="addr">{ALAMAT_TOKO} • HP/WA: 0822-9954-8411</div>
+                </div>
+                <div class="title-box">
+                    <div class="badge-inv">Surat Perjanjian Kredit</div>
+                    <div class="inv-no">#GRC-INV-{kid}</div>
+                    <div class="inv-date">{datetime.now().strftime('%d %B %Y · %H:%M')} WITA</div>
+                </div>
+            </header>
+            
+            <div class="body">
+                {perjanjian_html}
+                {signature_html}
+            </div>
+            
+            <footer class="footer">
+                <div class="footer-brand">GRACE'S ELECTRONIC</div>
+                <div>Dokumen ini sah dan mengikat secara hukum.</div>
+            </footer>
+        </div>
+        """
+
+        # Gabungkan kedua halaman ke dalam satu dokumen HTML
         invoice_html = f"""
         <!DOCTYPE html>
         <html lang="id">
@@ -1469,7 +1575,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         <style>
             * {{ box-sizing: border-box; margin: 0; padding: 0; }}
             body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 11px; }}
-            .page {{ max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,0.15); }}
+            .page {{ max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,0.15); margin-bottom: 20px; }}
             
             /* Tombol Print - Fixed di atas */
             .btn-print-wrap {{
@@ -1495,7 +1601,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .brand {{ position: relative; z-index:1; }}
             .brand h1 {{ font-size: 19px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
             .brand .tag {{ font-size: 9.5px; color: #94a3b8; letter-spacing: 0.4px; margin-top: 1px; }}
-            .brand .addr {{ font-size: 9px; color: #cbd5e1; margin-top: 4px; line-height: 1.4; }}
+            .brand .addr {{ font-size: 9px; color: #cbd5e1; margin-top: 4px; line-height: 1.4; max-width: 400px; }}
             .title-box {{ text-align: right; position: relative; z-index: 1; }}
             .badge-inv {{ display: inline-block; background: rgba(245,158,11,0.22); color: #fbbf24; padding: 3px 10px; border-radius: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(245,158,11,0.4); }}
             .inv-no {{ font-size: 11.5px; font-weight: 700; margin-top: 5px; }}
@@ -1606,7 +1712,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 @page {{ size: A4 portrait; margin: 6mm; }}
                 body {{ background: #fff; padding: 0; margin: 0; font-size: 9px; }}
                 .btn-print-wrap {{ display: none !important; }}
-                .page {{ box-shadow: none; border-radius: 0; max-width: 100%; width: 100%; border: none; }}
+                .page {{ box-shadow: none; border-radius: 0; max-width: 100%; width: 100%; border: none; margin-bottom: 0; }}
+                .page:nth-child(2) {{ page-break-before: always; }} /* Halaman 2 pindah sheet */
                 .hdr {{ padding: 10px 16px; }}
                 .body {{ padding: 6px 16px 8px; }}
                 .meta {{ padding: 4px 16px; }}
@@ -1622,87 +1729,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <button class="btn-print" onclick="window.print()">🖨️ Cetak Sekarang (Print / Simpan PDF)</button>
         </div>
 
-        <div class="page">
-            <header class="hdr">
-                <div class="brand">
-                    <h1>Grace's Electronic</h1>
-                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
-                    <div class="addr">Jl. Barong Tongkok, Kutai Barat • HP/WA: 0822-9954-8411</div>
-                </div>
-                <div class="title-box">
-                    <div class="badge-inv">Invoice Kredit</div>
-                    <div class="inv-no">#GRC-INV-{kid}</div>
-                    <div class="inv-date">{datetime.now().strftime('%d %B %Y · %H:%M')} WITA</div>
-                </div>
-            </header>
-
-            <div class="meta">
-                <div>Status: <b style="color:#059669;">● {m_status.upper()}</b></div>
-                <div>Metode: <b>{m_metode}</b></div>
-                <div style="{hide_style}">Bunga Flat: <b>{(rate_bulan*100):.2f}% / bln</b></div>
-            </div>
-
-            <div class="body">
-                <!-- Customer + Product -->
-                <div class="top-grid">
-                    <div class="sec">
-                        <div class="sec-title"><span class="ic">👤</span> Customer</div>
-                        <div class="kv">
-                            <div class="k">Nama</div><div class="v">{d['cn']}</div>
-                            <div class="k">Telepon</div><div class="v">{d['telepon']}</div>
-                            <div class="k">Alamat</div><div class="v">{d['alamat']}</div>
-                        </div>
-                    </div>
-                    <div class="sec">
-                        <div class="sec-title"><span class="ic">📱</span> Produk</div>
-                        <div class="kv">
-                            <div class="k">Nama</div><div class="v">{d['pn']}</div>
-                            <div class="k">SKU</div><div class="v">GRC-{d['produk_id']}</div>
-                            <div class="k">Garansi</div><div class="v">3 Bulan</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Summary Cards -->
-                <div class="summary" style="grid-template-columns: {grid_cols};">
-                    <div class="sum-card" style="{hide_style}"><div class="lbl">Harga Cash</div><div class="val">{format_rp(m_harga_cash)}</div></div>
-                    <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(m_dp)}</div></div>
-                    <div class="sum-card blue" style="{hide_style}"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(m_pokok)}</div></div>
-                    <div class="sum-card amber" style="{hide_style}"><div class="lbl">Bunga Flat</div><div class="val">{(rate_bulan*100):.2f}% / bln</div></div>
-                </div>
-
-                <!-- Pilihan Tenor -->
-                {html_tenor_options}
-
-                <!-- Jadwal Angsuran -->
-                {html_schedule}
-            </div>
-
-            <!-- PERJANJIAN KHUSUS OJK -->
-            {perjanjian_html}
-
-            <div class="body">
-                <!-- E-SIGNATURE & MATERAI -->
-                {signature_html}
-            </div>
-
-            <!-- Terms -->
-            <div class="terms-section">
-                <div class="terms-title">Syarat &amp; Ketentuan Tambahan</div>
-                <ol class="terms-list">
-                    <li><b>Metode:</b> Tunai atau transfer bank sesuai kesepakatan.</li>
-                    <li><b>Jatuh Tempo:</b> Setiap 30 hari, dimulai {m_tempo.strftime('%d-%m-%Y')}.</li>
-                    <li style="{hide_style}"><b>Bunga:</b> Flat {(rate_bulan*100):.2f}% per bulan dari pokok hutang.</li>
-                    <li><b>Keterlambatan:</b> Denda {get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari dari angsuran.</li>
-                </ol>
-            </div>
-
-            <footer class="footer">
-                <div class="footer-brand">GRACE'S ELECTRONIC</div>
-                <div>Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan untuk pembayaran berikutnya.</div>
-                <div style="font-size:7.5px; margin-top:2px;">Pemalsuan dokumen dapat ditindak sesuai hukum yang berlaku di Republik Indonesia.</div>
-            </footer>
-        </div>
+        {html_page1}
+        {html_page2}
         
         <script>
             window.onload = function() {{
@@ -1722,7 +1750,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         """
 
         # Tampilkan tombol Print JavaScript
-        components.html(invoice_html, height=1600, scrolling=True)
+        components.html(invoice_html, height=1800, scrolling=True)
         
         st.info("💡 **Tips Cetak:** Jika saat mencetak (Print) layout di atas terpotong, silakan klik tombol **📥 Download File Slip (HTML)** di bawah ini. Buka file tersebut di browser (Chrome/Edge), lalu tekan **Ctrl+P** untuk mendapatkan hasil PDF yang 100% sempurna.")
         
