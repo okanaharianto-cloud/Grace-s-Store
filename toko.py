@@ -4,6 +4,7 @@ import sqlite3
 import hashlib
 import os
 import shutil
+import uuid
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import altair as alt
@@ -516,7 +517,8 @@ elif pilihan == "🏠 Dashboard":
 
         st.markdown("### Hasil Simulasi:")
         html_sim = '<div class="metric-grid">'
-        html_sim += metric_card("Harga Cash", format_rp(h_cash), "card-blue")
+        if not hide_detail:
+            html_sim += metric_card("Harga Cash", format_rp(h_cash), "card-blue")
         html_sim += metric_card(f"DP ({sim_dp_persen}%)", format_rp(dp_val), "card-purple")
         html_sim += metric_card(f"Cicilan ({sim_tenor}x)", format_rp(cicilan), "card-pink")
         
@@ -1216,11 +1218,11 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         # Toggle perbandingan tenor
         tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor", value=True, help="Aktifkan untuk menampilkan 2 opsi tenor (misal 2x & 3x) untuk perbandingan. Matikan untuk hanya menampilkan 1 tenor yang dipilih.")
         # Toggle Hide Sensitif
-        hide_sensitive = st.toggle("🙈 Sembunyikan Pokok Hutang & Bunga (Mode Pelanggan)", value=False, help="Jika aktif, rincian Pokok Hutang, Bunga Flat, dan Sisa Hutang akan disembunyikan di cetakan.")
+        hide_sensitive = st.toggle("🙈 Sembunyikan Rincian (Mode Pelanggan)", value=False, help="Jika aktif, Harga Cash, Pokok Hutang, Bunga Flat, dan Sisa Hutang akan disembunyikan.")
         
         hide_style = "display: none !important;" if hide_sensitive else ""
         hide_col_style = "display: none !important;" if hide_sensitive else "table-cell"
-        grid_cols = "repeat(2, 1fr)" if hide_sensitive else "repeat(4, 1fr)"
+        grid_cols = "1fr" if hide_sensitive else "repeat(4, 1fr)"
 
         if tampilkan_banding:
             tenor_opsi_1 = 2
@@ -1373,17 +1375,88 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
             """
 
-        # ================= PREVIEW DATA =================
-        st.markdown('<div class="section-header"><h3>📋 Ringkasan Akad Kredit</h3></div>', unsafe_allow_html=True)
-        html_metric = '<div class="metric-grid">'
-        html_metric += metric_card("Harga Cash", format_rp(m_harga_cash), "card-blue")
-        html_metric += metric_card("DP Dibayar (Uang Masuk)", format_rp(m_dp), "card-purple")
-        html_metric += metric_card("Pokok Hutang", format_rp(m_pokok), "card-orange")
-        html_metric += metric_card("Total Hutang", format_rp(m_total_hutang), "card-dark")
-        html_metric += metric_card(f"Cicilan × {int(m_tenor)} bln", format_rp(m_cicilan), "card-pink")
-        html_metric += metric_card("Sisa Saat Ini", format_rp(d['sisa_hutang']), "card-green" if float(d['sisa_hutang']) <= 0 else "card-dark")
-        html_metric += '</div>'
-        st.markdown(html_metric, unsafe_allow_html=True)
+        # ================= PERJANJIAN KHUSUS OJK & MATERAI =================
+        # Tampilkan Materai jika Total Hutang >= 5.000.000
+        materai_html = ""
+        if m_total_hutang >= 5000000:
+            # Generate unique serial number for E-Materai
+            import uuid
+            serial_materai = f"EM-{uuid.uuid4().hex[:8].upper()}-{datetime.now().strftime('%Y')}"
+            materai_html = f"""
+            <div class="materai-box">
+                <div class="materai-header">METERAI<br>TEMPEL</div>
+                <div class="materai-value">Rp 10.000</div>
+                <div class="materai-serial">{serial_materai}</div>
+                <div class="materai-footer">E-Meterai Sah</div>
+            </div>
+            """
+            
+        # Teks Perjanjian (Hitam di atas putih)
+        perjanjian_html = f"""
+        <div class="agreement-container">
+            <div class="agreement-title">SURAT PERJANJIAN KREDIT BARANG & SURAT KUASA PEMBEBANAN</div>
+            <div class="agreement-number">Nomor: GRC-INV-{kid}/PERJ/2026</div>
+            
+            <p>Pada hari ini, <b>{datetime.now().strftime('%d %B %Y')}</b>, yang bertanda tangan di bawah ini:</p>
+            
+            <table class="agreement-table">
+                <tr>
+                    <td style="width: 150px; vertical-align: top;"><b>PIHAK PERTAMA (Kreditur)</b></td>
+                    <td style="vertical-align: top;">: <b>Grace's Electronic</b>, berkedudukan di Jl. Barong Tongkok, Kutai Barat.</td>
+                </tr>
+                <tr>
+                    <td style="vertical-align: top;"><b>PIHAK KEDUA (Debitur)</b></td>
+                    <td style="vertical-align: top;">: <b>{d['cn']}</b>, beralamat di {d['alamat']}, Telp/WA: {d['telepon']}.</td>
+                </tr>
+            </table>
+            
+            <p>Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Kredit dengan ketentuan sebagai berikut:</p>
+            
+            <div class="agreement-articles">
+                <b>Pasal 1 - Objek Perjanjian</b>
+                <p>Pihak Pertama menyerahkan hak milik barang berupa <b>{d['pn']}</b> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara kredit dengan harga cash sebesar <b>{format_rp(m_harga_cash)}</b>.</p>
+                
+                <b>Pasal 2 - Ketentuan Pembiayaan (Sesuai Standar OJK)</b>
+                <p>1. Uang Muka (DP) yang telah dibayarkan adalah sebesar <b>{format_rp(m_dp)}</b>.</p>
+                <p>2. Pokok Hutang (Sisa Harga) adalah sebesar <b>{format_rp(m_pokok)}</b>.</p>
+                <p>3. Bunga Flat disepakati sebesar <b>{m_bunga_bln:.2f}% per bulan</b> dari Pokok Hutang.</p>
+                <p>4. Total Kewajiban (Pokok + Bunga) adalah sebesar <b>{format_rp(m_total_hutang)}</b>.</p>
+                <p>5. Jangka waktu angsuran (Tenor) adalah <b>{m_tenor} bulan</b>, dengan nominal angsuran sebesar <b>{format_rp(m_cicilan)} per bulan</b>.</p>
+                
+                <b>Pasal 3 - Jatuh Tempo & Denda</b>
+                <p>1. Angsuran wajib dibayarkan setiap tanggal jatuh tempo sesuai jadwal yang telah disepakati, dimulai pada tanggal <b>{m_tempo.strftime('%d-%m-%Y')}</b>.</p>
+                <p>2. Keterlambatan pembayaran dikenakan denda sebesar <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari nominal angsuran yang tertunggak.</p>
+                
+                <b>Pasal 4 - Wanprestasi</b>
+                <p>Apabila Pihak Kedua gagal membayar angsuran selama 2 (dua) bulan berturut-turut, maka Pihak Pertama berhak melakukan penarikan barang secara paksa (Parate Eksekusi) dan Pihak Kedua bersedia menyerahkannya tanpa syarat.</p>
+            </div>
+            
+            <p>Demikian perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dibuat dalam keadaan sehat jasmani dan rohani.</p>
+        </div>
+        """
+        
+        # ================= E-SIGNATURE =================
+        signature_html = f"""
+        <div class="signature-area">
+            <div class="sig-box">
+                <div class="sig-title">PIHAK PERTAMA (TOKO)</div>
+                <div class="sig-space">
+                    {materai_html}
+                    <svg id="signatureBarcode"></svg>
+                </div>
+                <div class="sig-name">Grace's Electronic</div>
+                <div class="sig-verify">Digital Signature by System</div>
+            </div>
+            <div class="sig-box">
+                <div class="sig-title">PIHAK KEDUA (CUSTOMER)</div>
+                <div class="sig-space">
+                    <div class="customer-ttd">{d['cn']}</div>
+                </div>
+                <div class="sig-name">( {d['cn']} )</div>
+                <div class="sig-verify">E-Sign / Tanda Tangan Basah</div>
+            </div>
+        </div>
+        """
 
         # ================= INVOICE HTML (DESAIN PROFESIONAL) =================
         invoice_html = f"""
@@ -1486,25 +1559,42 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .status-pending {{ display: inline-block; padding: 1px 6px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 8px; font-weight: 700; }}
             .status-lunas {{ display: inline-block; padding: 1px 6px; border-radius: 8px; background: #d1fae5; color: #065f46; font-size: 8px; font-weight: 700; }}
 
-            /* SIGNATURE */
-            .sig-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }}
-            .sig-card {{ border: 2px dashed #1e3a8a; border-radius: 10px; padding: 10px 12px; background: linear-gradient(135deg, #f8fafc, #eff6ff); text-align: center; position: relative; }}
-            .sig-card.customer {{ border-color: #b8956a; background: linear-gradient(135deg, #faf5ff, #f3e8ff); }}
-            .sig-card .seal {{ position: absolute; top: 45%; left: 50%; transform: translate(-50%,-50%) rotate(-15deg); width: 80px; height: 80px; border: 3px solid rgba(16,185,129,0.14); border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 6.5px; font-weight: 900; color: rgba(16,185,129,0.18); text-transform: uppercase; letter-spacing: 0.8px; line-height: 1.2; pointer-events: none; }}
-            .sig-title {{ font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: #1e3a8a; margin-bottom: 4px; position: relative; z-index: 1; }}
-            .sig-card.customer .sig-title {{ color: #b8956a; }}
-            .sig-subtitle {{ font-size: 8px; color: #64748b; margin-bottom: 5px; position: relative; z-index: 1; }}
-            #signatureBarcode {{ max-width: 100%; background: #fff; padding: 3px 8px; border-radius: 4px; display: inline-block; border: 1px solid #e2e8f0; position: relative; z-index: 1; }}
-            .sig-meta {{ font-size: 8.5px; color: #475569; margin-top: 4px; line-height: 1.4; position: relative; z-index: 1; }}
-            .sig-verify {{ font-family: 'Courier New', monospace; font-size: 8px; color: #6b7280; text-align: center; margin-top: 2px; }}
-            .sig-verify b {{ color: #1a2b47; }}
-            .sign-space {{ height: 40px; border-bottom: 1.5px solid #b8956a; margin: 6px 6px 4px; position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center; }}
-            .sign-space .hint {{ font-size: 8px; color: #94a3b8; font-style: italic; padding-bottom: 2px; }}
-            .sign-name {{ font-size: 9.5px; font-weight: 700; color: #1a2b47; margin-top: 4px; position: relative; z-index: 1; }}
-            .customer-options {{ margin-top: 5px; font-size: 8px; color: #64748b; position: relative; z-index: 1; line-height: 1.5; }}
+            /* PERJANJIAN OJK */
+            .agreement-container {{ 
+                background: #ffffff; border: 2px solid #000000; padding: 20px; margin-top: 15px; margin-bottom: 15px; 
+                font-family: 'Times New Roman', Times, serif; font-size: 10.5px; color: #000000; line-height: 1.6;
+            }}
+            .agreement-title {{ text-align: center; font-weight: bold; font-size: 12px; text-decoration: underline; margin-bottom: 4px; }}
+            .agreement-number {{ text-align: center; font-weight: bold; margin-bottom: 15px; }}
+            .agreement-table {{ width: 100%; margin-bottom: 15px; }}
+            .agreement-articles {{ margin-top: 10px; }}
+            .agreement-articles b {{ display: block; margin-top: 10px; margin-bottom: 4px; font-size: 11px; }}
+            .agreement-articles p {{ margin-bottom: 4px; text-align: justify; }}
+
+            /* SIGNATURE & MATERAI */
+            .signature-area {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }}
+            .sig-box {{ border: 1px solid #000; border-radius: 8px; padding: 15px; text-align: center; position: relative; }}
+            .sig-title {{ font-size: 10px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }}
+            .sig-space {{ height: 100px; display: flex; align-items: center; justify-content: center; position: relative; }}
+            .sig-name {{ font-size: 11px; font-weight: bold; text-decoration: underline; margin-top: 10px; }}
+            .sig-verify {{ font-size: 8.5px; color: #555; margin-top: 2px; }}
+            
+            /* E-MATERAI STYLE */
+            .materai-box {{
+                position: absolute; left: 10px; top: 10px; width: 75px; height: 45px;
+                background: linear-gradient(135deg, #6b21a8, #4c1d95); color: white;
+                border-radius: 4px; padding: 4px; text-align: center;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 10;
+            }}
+            .materai-header {{ font-size: 6px; font-weight: bold; letter-spacing: 1px; opacity: 0.8; }}
+            .materai-value {{ font-size: 11px; font-weight: 900; margin: 1px 0; }}
+            .materai-serial {{ font-size: 6px; font-family: monospace; opacity: 0.9; }}
+            .materai-footer {{ font-size: 5px; margin-top: 2px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 1px; }}
+            
+            .customer-ttd {{ font-family: 'Brush Script MT', 'Segoe Script', cursive; font-size: 28px; color: #1e3a8a; transform: rotate(-5deg); opacity: 0.8; }}
 
             /* TERMS & FOOTER */
-            .terms-section {{ padding: 10px 22px; background: #f9fafb; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }}
+            .terms-section {{ padding: 10px 22px; background: #f9fafb; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; margin-top: 15px; }}
             .terms-title {{ font-family: Georgia, serif; font-size: 9px; font-weight: 700; color: #1a2b47; letter-spacing: 1.4px; text-transform: uppercase; margin-bottom: 4px; }}
             .terms-list {{ counter-reset: item; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 20px; font-size: 9px; color: #4b5563; }}
             .terms-list li {{ display: flex; gap: 6px; line-height: 1.5; }}
@@ -1574,8 +1664,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 </div>
 
                 <!-- Summary Cards -->
-                <div class="summary">
-                    <div class="sum-card"><div class="lbl">Harga Cash</div><div class="val">{format_rp(m_harga_cash)}</div></div>
+                <div class="summary" style="grid-template-columns: {grid_cols};">
+                    <div class="sum-card" style="{hide_style}"><div class="lbl">Harga Cash</div><div class="val">{format_rp(m_harga_cash)}</div></div>
                     <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(m_dp)}</div></div>
                     <div class="sum-card blue" style="{hide_style}"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(m_pokok)}</div></div>
                     <div class="sum-card amber" style="{hide_style}"><div class="lbl">Bunga Flat</div><div class="val">{(rate_bulan*100):.2f}% / bln</div></div>
@@ -1586,30 +1676,19 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
 
                 <!-- Jadwal Angsuran -->
                 {html_schedule}
+            </div>
 
-                <!-- Signatures -->
-                <div class="sig-grid">
-                    <div class="sig-card">
-                        <div class="seal">GRACE'S<br>VERIFIED<br>★</div>
-                        <div class="sig-title">✓ Tanda Tangan Toko</div>
-                        <div class="sig-subtitle">Digital — Sah &amp; Terverifikasi</div>
-                        <svg id="signatureBarcode"></svg>
-                        <div class="sig-verify"><b>Kode:</b> GRC-{kid}-TN</div>
-                        <div class="sig-verify"><b>Tgl:</b> {datetime.now().strftime('%d-%m-%Y %H:%M')}</div>
-                    </div>
-                    <div class="sig-card customer">
-                        <div class="sig-title">✍ Tanda Tangan Customer</div>
-                        <div class="sig-subtitle">Manual (basah) atau E-Sign</div>
-                        <div class="sign-space"><span class="hint">[ Tanda tangan di sini ]</span></div>
-                        <div class="sign-name">( {d['cn']} )</div>
-                        <div class="customer-options"><b>Tenor:</b> ☐ {tenor_asli}x &nbsp; <b>Metode:</b> ☐ Manual ☐ E-Sign</div>
-                    </div>
-                </div>
+            <!-- PERJANJIAN KHUSUS OJK -->
+            {perjanjian_html}
+
+            <div class="body">
+                <!-- E-SIGNATURE & MATERAI -->
+                {signature_html}
             </div>
 
             <!-- Terms -->
             <div class="terms-section">
-                <div class="terms-title">Syarat &amp; Ketentuan</div>
+                <div class="terms-title">Syarat &amp; Ketentuan Tambahan</div>
                 <ol class="terms-list">
                     <li><b>Metode:</b> Tunai atau transfer bank sesuai kesepakatan.</li>
                     <li><b>Jatuh Tempo:</b> Setiap 30 hari, dimulai {m_tempo.strftime('%d-%m-%Y')}.</li>
@@ -1643,7 +1722,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         """
 
         # Tampilkan tombol Print JavaScript
-        components.html(invoice_html, height=1200, scrolling=True)
+        components.html(invoice_html, height=1600, scrolling=True)
         
         st.info("💡 **Tips Cetak:** Jika saat mencetak (Print) layout di atas terpotong, silakan klik tombol **📥 Download File Slip (HTML)** di bawah ini. Buka file tersebut di browser (Chrome/Edge), lalu tekan **Ctrl+P** untuk mendapatkan hasil PDF yang 100% sempurna.")
         
