@@ -1159,56 +1159,36 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             WHERE k.id=?
         """, conn, params=(kid,)).iloc[0].fillna('-')
 
-        # ================= PENGATURAN CETAK =================
-        col_set1, col_set2 = st.columns(2)
-        with col_set1:
-            metode_bayar = st.radio(
-                "Pilih Metode Pembayaran Angsuran (akan dicetak di Invoice):",
-                ["Tunai (Cash)", "Transfer Bank"],
-                horizontal=True
-            )
-        with col_set2:
-            tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor", value=True, help="Aktifkan untuk menampilkan 2 opsi tenor (misal 2x & 3x) untuk perbandingan. Matikan untuk hanya menampilkan 1 tenor yang dipilih.")
-        
-        # FITUR BARU: Edit Bunga Flat per bulan
-        bunga_flat_owner = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
-        default_rate_bulan = round(bunga_flat_owner / 6, 2)
-        
-        bunga_input = st.number_input(
-            "⚙️ Edit Bunga Flat per Bulan (%) - *Khusus Cetakan Ini*", 
-            min_value=0.0, 
-            value=float(default_rate_bulan), 
-            step=0.1, 
-            format="%.2f",
-            help="Anda bisa mengubah angka ini tanpa merubah pengaturan global di menu Owner."
-        )
-        rate_bulan = bunga_input / 100
-        
-        denda_harian = get_pengaturan_float("denda_per_hari_persen", 1.0)
+        # ================= PENGATURAN CETAK & EDIT MANUAL =================
+        st.markdown('<div class="section-header"><h3>✏️ Edit Manual Data Akad (Khusus Cetakan Ini)</h3></div>', unsafe_allow_html=True)
+        with st.expander("Buka Form Edit Manual", expanded=True):
+            col_e1, col_e2, col_e3 = st.columns(3)
+            with col_e1:
+                m_harga_cash = st.number_input("Harga Cash (Rp)", value=float(d['harga_cash']), step=10000.0)
+                m_dp = st.number_input("DP Dibayar (Rp)", value=float(d['dp']), step=10000.0)
+                m_pokok = st.number_input("Pokok Hutang (Rp)", value=float(d['pokok_hutang']), step=10000.0)
+            with col_e2:
+                m_total_hutang = st.number_input("Total Hutang (Rp)", value=float(d['total_hutang']), step=10000.0)
+                m_cicilan = st.number_input("Cicilan / Bulan (Rp)", value=float(d['cicilan_bulan']), step=10000.0)
+                m_tenor = st.number_input("Tenor (Bulan)", value=int(d['tenor']), step=1, min_value=1)
+            with col_e3:
+                m_bunga_bln = st.number_input("Bunga Flat / Bulan (%)", value=round(get_pengaturan_float("bunga_flat_6bln_persen", 40.0) / 6, 2), step=0.1, format="%.2f")
+                m_tempo = st.date_input("Jatuh Tempo", value=pd.to_datetime(d['jatuh_tempo']).date())
+                m_status = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(d['status']) if d['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
+                m_metode = st.radio("Metode", ["Tunai (Cash)", "Transfer Bank"], horizontal=True)
 
-        # ================= FORM EDIT AKAD KREDIT =================
-        with st.expander("⚙️ Edit Akad Kredit (Mengubah Total, Tenor, Cicilan, atau Jatuh Tempo)", expanded=False):
-            with st.form(f"form_edit_akad_{kid}"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    new_total = st.number_input("Total Hutang (Rp)", value=float(d['total_hutang']), step=10000.0)
-                    new_tenor = st.number_input("Tenor (Bulan)", value=int(d['tenor']), step=1, min_value=1)
-                with col2:
-                    new_cicilan = st.number_input("Cicilan / Bulan (Rp)", value=float(d['cicilan_bulan']), step=10000.0)
-                    new_tempo = st.date_input("Jatuh Tempo Berikutnya", value=pd.to_datetime(d['jatuh_tempo']).date())
-                
-                if st.form_submit_button("💾 Simpan Perubahan Akad"):
-                    try:
-                        c.execute("UPDATE kredit SET total_hutang=?, tenor=?, cicilan_bulan=?, jatuh_tempo=? WHERE id=?",
-                                  (new_total, new_tenor, new_cicilan, new_tempo.strftime("%Y-%m-%d"), kid))
-                        recalculate_kredit(kid)
-                        conn.commit()
-                        log_aksi(st.session_state.username, "EDIT_AKAD_KREDIT", f"ID {kid}")
-                        flash("✅ Akad kredit diupdate! Jadwal angsuran telah disesuaikan.", "success")
-                        st.rerun()
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"❌ Gagal: {e}")
+            if st.button("💾 Simpan Perubahan Ini ke Database"):
+                try:
+                    c.execute("""UPDATE kredit SET harga_cash=?, dp=?, pokok_hutang=?, total_hutang=?, cicilan_bulan=?, tenor=?, jatuh_tempo=?, status=? WHERE id=?""",
+                              (m_harga_cash, m_dp, m_pokok, m_total_hutang, m_cicilan, m_tenor, m_tempo.strftime("%Y-%m-%d"), m_status, kid))
+                    recalculate_kredit(kid)
+                    conn.commit()
+                    log_aksi(st.session_state.username, "EDIT_AKAD_KREDIT", f"ID {kid}")
+                    flash("✅ Perubahan berhasil disimpan ke database!", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal: {e}")
 
         df_bayar = pd.read_sql_query("""
             SELECT id, tanggal, jumlah_bayar, denda, keterangan
@@ -1217,13 +1197,17 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
 
         tanggal_kredit_str = d['tanggal_kredit'] if pd.notna(d['tanggal_kredit']) else (datetime.strptime(d['jatuh_tempo'], "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
         
-        tenor_asli = int(d['tenor'])
-        total_asli = float(d['total_hutang'])
+        tenor_asli = int(m_tenor)
+        total_asli = float(m_total_hutang)
+        rate_bulan = m_bunga_bln / 100
         
+        # Toggle perbandingan tenor
+        tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor", value=True, help="Aktifkan untuk menampilkan 2 opsi tenor (misal 2x & 3x) untuk perbandingan. Matikan untuk hanya menampilkan 1 tenor yang dipilih.")
+
         if tampilkan_banding:
             tenor_opsi_1 = 2
             tenor_opsi_2 = 3
-            pokok_awal = float(d['pokok_hutang'])
+            pokok_awal = float(m_pokok)
             
             total_1 = round(pokok_awal * (1 + (rate_bulan * tenor_opsi_1)), -2)
             cicilan_1 = round(total_1 / tenor_opsi_1, -2)
@@ -1276,7 +1260,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
             """
         else:
-            schedule_1 = build_jadwal_angsuran(total_asli, d['cicilan_bulan'], tenor_asli, tanggal_kredit_str)
+            schedule_1 = build_jadwal_angsuran(total_asli, m_cicilan, tenor_asli, tanggal_kredit_str)
             
             html_tenor_options = f"""
             <div class="tenor-options" style="grid-template-columns: 1fr;">
@@ -1284,7 +1268,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     <div class="tc-label">Tenor Dipilih</div>
                     <div class="tc-title">Tenor {tenor_asli}× ({tenor_asli} Bulan)</div>
                     <div class="tc-row"><span class="k">Total hutang (Pokok + Bunga)</span><span class="v">{format_rp(total_asli)}</span></div>
-                    <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(d['cicilan_bulan'])}</span></div>
+                    <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(m_cicilan)}</span></div>
                 </div>
             </div>
             """
@@ -1307,11 +1291,11 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         # ================= PREVIEW DATA =================
         st.markdown('<div class="section-header"><h3>📋 Ringkasan Akad Kredit</h3></div>', unsafe_allow_html=True)
         html_metric = '<div class="metric-grid">'
-        html_metric += metric_card("Harga Cash", format_rp(d['harga_cash']), "card-blue")
-        html_metric += metric_card("DP Dibayar (Uang Masuk)", format_rp(d['dp']), "card-purple")
-        html_metric += metric_card("Pokok Hutang", format_rp(d['pokok_hutang']), "card-orange")
-        html_metric += metric_card("Total Hutang", format_rp(d['total_hutang']), "card-dark")
-        html_metric += metric_card(f"Cicilan × {int(d['tenor'])} bln", format_rp(d['cicilan_bulan']), "card-pink")
+        html_metric += metric_card("Harga Cash", format_rp(m_harga_cash), "card-blue")
+        html_metric += metric_card("DP Dibayar (Uang Masuk)", format_rp(m_dp), "card-purple")
+        html_metric += metric_card("Pokok Hutang", format_rp(m_pokok), "card-orange")
+        html_metric += metric_card("Total Hutang", format_rp(m_total_hutang), "card-dark")
+        html_metric += metric_card(f"Cicilan × {int(m_tenor)} bln", format_rp(m_cicilan), "card-pink")
         html_metric += metric_card("Sisa Saat Ini", format_rp(d['sisa_hutang']), "card-green" if float(d['sisa_hutang']) <= 0 else "card-dark")
         html_metric += '</div>'
         st.markdown(html_metric, unsafe_allow_html=True)
@@ -1478,8 +1462,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </header>
 
             <div class="meta">
-                <div>Status: <b style="color:#059669;">● {d['status'].upper()}</b></div>
-                <div>Metode: <b>{metode_bayar}</b></div>
+                <div>Status: <b style="color:#059669;">● {m_status.upper()}</b></div>
+                <div>Metode: <b>{m_metode}</b></div>
                 <div>Bunga Flat: <b>{(rate_bulan*100):.2f}% / bln</b></div>
             </div>
 
@@ -1506,9 +1490,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
 
                 <!-- Summary Cards -->
                 <div class="summary">
-                    <div class="sum-card"><div class="lbl">Harga Cash</div><div class="val">{format_rp(d['harga_cash'])}</div></div>
-                    <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(d['dp'])}</div></div>
-                    <div class="sum-card blue"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(d['pokok_hutang'])}</div></div>
+                    <div class="sum-card"><div class="lbl">Harga Cash</div><div class="val">{format_rp(m_harga_cash)}</div></div>
+                    <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(m_dp)}</div></div>
+                    <div class="sum-card blue"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(m_pokok)}</div></div>
                     <div class="sum-card amber"><div class="lbl">Bunga Flat</div><div class="val">{(rate_bulan*100):.2f}% / bln</div></div>
                 </div>
 
@@ -1543,9 +1527,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <div class="terms-title">Syarat &amp; Ketentuan</div>
                 <ol class="terms-list">
                     <li><b>Metode:</b> Tunai atau transfer bank sesuai kesepakatan.</li>
-                    <li><b>Jatuh Tempo:</b> Setiap 30 hari, dimulai {d['jatuh_tempo']}.</li>
+                    <li><b>Jatuh Tempo:</b> Setiap 30 hari, dimulai {m_tempo.strftime('%d-%m-%Y')}.</li>
                     <li><b>Bunga:</b> Flat {(rate_bulan*100):.2f}% per bulan dari pokok hutang.</li>
-                    <li><b>Keterlambatan:</b> Denda {denda_harian}% per hari dari angsuran.</li>
+                    <li><b>Keterlambatan:</b> Denda {get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari dari angsuran.</li>
                 </ol>
             </div>
 
