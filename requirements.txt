@@ -3,3 +3,8 @@ pandas
 altair
 fpdf2
 Pillow
+streamlit
+pandas
+openpyxl
+xlsxwriter
+Pillow
