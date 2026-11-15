@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from urllib.parse import quote
 import altair as alt
-import streamlit.components.v1 as components  # Untuk fitur Print langsung
+import streamlit.components.v1 as components
 
 # ==================== KONFIGURASI HALAMAN ====================
 st.set_page_config(
@@ -92,7 +92,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS users
               nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
 c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas
              (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
-# ==================== TABEL PENGATURAN ====================
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan
              (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
 conn.commit()
@@ -386,17 +385,10 @@ show_flash()
 # ==================== 0. PENGATURAN OWNER ====================
 if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase default toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
-
     st.info("💡 **PENTING:** Pengaturan di halaman ini adalah **NILAI DEFAULT** untuk transaksi baru. Saat Anda membuat Kredit Baru, Anda tetap bisa mengedit persentase Bunga dan DP secara manual per transaksi.")
 
     st.markdown('<div class="section-header"><h3>💰 Markup / Margin Default</h3></div>', unsafe_allow_html=True)
-    markup_val = st.number_input(
-        "Markup default untuk produk **non-pakaian** (%)",
-        min_value=0.0, max_value=500.0,
-        value=get_pengaturan_float("markup_default_persen", 5.0),
-        step=1.0,
-        key="input_markup_owner"
-    )
+    markup_val = st.number_input("Markup default untuk produk **non-pakaian** (%)", min_value=0.0, max_value=500.0, value=get_pengaturan_float("markup_default_persen", 5.0), step=1.0, key="input_markup_owner")
     if st.button("💾 Simpan Markup Default", key="save_markup"):
         try:
             set_pengaturan("markup_default_persen", f"{markup_val:.2f}")
@@ -407,13 +399,7 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
             st.error(f"❌ Gagal: {e}")
 
     st.markdown('<div class="section-header"><h3>💳 Bunga Kredit Default</h3></div>', unsafe_allow_html=True)
-    bunga_val = st.number_input(
-        "Bunga flat per **6 bulan** (%)",
-        min_value=0.0, max_value=200.0,
-        value=get_pengaturan_float("bunga_flat_6bln_persen", 40.0),
-        step=1.0,
-        key="input_bunga_owner"
-    )
+    bunga_val = st.number_input("Bunga flat per **6 bulan** (%)", min_value=0.0, max_value=200.0, value=get_pengaturan_float("bunga_flat_6bln_persen", 40.0), step=1.0, key="input_bunga_owner")
     if st.button("💾 Simpan Bunga Default", key="save_bunga"):
         try:
             set_pengaturan("bunga_flat_6bln_persen", f"{bunga_val:.2f}")
@@ -424,13 +410,7 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
             st.error(f"❌ Gagal: {e}")
 
     st.markdown('<div class="section-header"><h3>🪙 DP Minimal</h3></div>', unsafe_allow_html=True)
-    dp_val = st.number_input(
-        "DP minimal (% dari harga cash)",
-        min_value=0.0, max_value=100.0,
-        value=get_pengaturan_float("dp_minimal_persen", 20.0),
-        step=1.0,
-        key="input_dp_owner"
-    )
+    dp_val = st.number_input("DP minimal (% dari harga cash)", min_value=0.0, max_value=100.0, value=get_pengaturan_float("dp_minimal_persen", 20.0), step=1.0, key="input_dp_owner")
     if st.button("💾 Simpan DP Minimal", key="save_dp"):
         try:
             set_pengaturan("dp_minimal_persen", f"{dp_val:.2f}")
@@ -441,14 +421,7 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
             st.error(f"❌ Gagal: {e}")
 
     st.markdown('<div class="section-header"><h3>⏰ Denda Keterlambatan</h3></div>', unsafe_allow_html=True)
-    denda_val = st.number_input(
-        "Denda per hari telat (% dari cicilan)",
-        min_value=0.0, max_value=20.0,
-        value=get_pengaturan_float("denda_per_hari_persen", 1.0),
-        step=0.1,
-        format="%.2f",
-        key="input_denda_owner"
-    )
+    denda_val = st.number_input("Denda per hari telat (% dari cicilan)", min_value=0.0, max_value=20.0, value=get_pengaturan_float("denda_per_hari_persen", 1.0), step=0.1, format="%.2f", key="input_denda_owner")
     if st.button("💾 Simpan Denda", key="save_denda"):
         try:
             set_pengaturan("denda_per_hari_persen", f"{denda_val:.2f}")
@@ -459,11 +432,7 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
             st.error(f"❌ Gagal: {e}")
 
     st.markdown('<div class="section-header"><h3>📅 Pilihan Tenor</h3></div>', unsafe_allow_html=True)
-    tenor_val = st.text_input(
-        "Pilihan tenor (bulan, pisahkan dengan koma)",
-        value=get_pengaturan("tenor_options", "1,2,3,6,12,18,24"),
-        key="input_tenor_owner"
-    )
+    tenor_val = st.text_input("Pilihan tenor (bulan, pisahkan dengan koma)", value=get_pengaturan("tenor_options", "1,2,3,6,12,18,24"), key="input_tenor_owner")
     if st.button("💾 Simpan Tenor", key="save_tenor"):
         try:
             _ = [int(x.strip()) for x in tenor_val.split(",") if x.strip()]
@@ -1019,7 +988,7 @@ elif pilihan == "💰 Pembayaran Cicilan":
 
 # ==================== 6b. CETAK SLIP KREDIT (PRINT & FOOTER) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
-    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Jadwal Angsuran</h1><p>Slip DP + jadwal cicilan per tenor untuk diberikan ke customer</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Jadwal Angsuran</h1><p>Slip DP + jadwal cicilan untuk diberikan ke customer</p></div>', unsafe_allow_html=True)
 
     df_k = pd.read_sql_query("""
         SELECT k.id, c.nama as customer, p.nama as produk, k.status, k.total_hutang, k.sisa_hutang, k.tanggal_kredit
@@ -1045,12 +1014,17 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             WHERE k.id=?
         """, conn, params=(kid,)).iloc[0]
 
-        # Input Metode Pembayaran untuk dicetak di Invoice
-        metode_bayar = st.radio(
-            "Pilih Metode Pembayaran Angsuran (akan dicetak di Invoice):",
-            ["Tunai (Cash)", "Transfer Bank"],
-            horizontal=True
-        )
+        # ================= PENGATURAN CETAK =================
+        col_set1, col_set2 = st.columns(2)
+        with col_set1:
+            metode_bayar = st.radio(
+                "Pilih Metode Pembayaran Angsuran (akan dicetak di Invoice):",
+                ["Tunai (Cash)", "Transfer Bank"],
+                horizontal=True
+            )
+        with col_set2:
+            tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor", value=True, help="Aktifkan untuk menampilkan 2 opsi tenor (misal 2x & 3x) untuk perbandingan. Matikan untuk hanya menampilkan 1 tenor yang dipilih.")
+        
         denda_harian = get_pengaturan_float("denda_per_hari_persen", 1.0)
 
         # ================= FORM EDIT AKAD KREDIT =================
@@ -1083,304 +1057,335 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         """, conn, params=(kid,))
 
         tanggal_kredit_str = d['tanggal_kredit'] if pd.notna(d['tanggal_kredit']) else (datetime.strptime(d['jatuh_tempo'], "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
-        schedule = build_jadwal_angsuran(d['total_hutang'], d['cicilan_bulan'], d['tenor'], tanggal_kredit_str)
-
-        paid_principal = max(float(d['total_hutang']) - float(d['sisa_hutang']), 0)
-        cum = 0
-        for row in schedule:
-            cum += row['angsuran']
-            if cum <= paid_principal + 1:
-                row['status'] = "✅ LUNAS"
-            elif cum - row['angsuran'] < paid_principal:
-                row['status'] = "🔶 SEBAGIAN"
-            else:
-                row['status'] = "⏳ BELUM"
-            row['sisa_real'] = max(cum - paid_principal, 0)
-
-        st.markdown('<div class="section-header"><h3>📋 Ringkasan Akad Kredit</h3></div>', unsafe_allow_html=True)
-        html = '<div class="metric-grid">'
-        html += metric_card("Harga Cash", format_rp(d['harga_cash']), "card-blue")
-        html += metric_card("DP Dibayar (Uang Masuk)", format_rp(d['dp']), "card-purple")
-        html += metric_card("Pokok Hutang", format_rp(d['pokok_hutang']), "card-orange")
-        html += metric_card("Total Hutang", format_rp(d['total_hutang']), "card-dark")
-        html += metric_card(f"Cicilan × {int(d['tenor'])} bln", format_rp(d['cicilan_bulan']), "card-pink")
-        html += metric_card("Sisa Saat Ini", format_rp(d['sisa_hutang']), "card-green" if float(d['sisa_hutang']) <= 0 else "card-dark")
-        html += '</div>'
-        st.markdown(html, unsafe_allow_html=True)
-
-        info_col1, info_col2 = st.columns(2)
-        with info_col1:
-            st.markdown(f"""
-            **👤 Customer**
-            - Nama: **{d['cn']}**
-            - Telepon: {d['telepon'] or '—'}
-            - Alamat: {d['alamat'] or '—'}
-            """)
-        with info_col2:
-            st.markdown(f"""
-            **📱 Produk & Status**
-            - Produk: **{d['pn']}**
-            - Tanggal Kredit: {tanggal_kredit_str}
-            - Status: **{d['status']}**
-            - Jatuh Tempo Berikutnya: **{d['jatuh_tempo']}**
-            """)
-
-        st.markdown('<div class="section-header"><h3>📅 Jadwal Angsuran (per Tenor)</h3></div>', unsafe_allow_html=True)
-        df_sched = pd.DataFrame(schedule)[['ke', 'jatuh_tempo', 'angsuran', 'sisa', 'status']]
-        df_sched_show = df_sched.copy()
-        df_sched_show['angsuran'] = df_sched_show['angsuran'].apply(format_rp)
-        df_sched_show['sisa'] = df_sched_show['sisa'].apply(format_rp)
-        df_sched_show = df_sched_show.rename(columns={
-            'ke': 'Angsuran Ke-', 'jatuh_tempo': 'Jatuh Tempo',
-            'angsuran': 'Jumlah Angsuran', 'sisa': 'Sisa Hutang Setelah Bayar', 'status': 'Status'
-        })
-        st.dataframe(df_sched_show, use_container_width=True, hide_index=True)
-
-        # ================= TABEL RIWAYAT PEMBAYARAN (EDIT/DELETE) =================
-        st.markdown('<div class="section-header"><h3>📜 Riwayat Pembayaran</h3></div>', unsafe_allow_html=True)
         
-        if not df_bayar.empty:
-            edited_bayar = st.data_editor(
-                df_bayar,
-                column_config={
-                    "id": st.column_config.NumberColumn("ID", disabled=True, width="small"),
-                    "tanggal": st.column_config.DateColumn("Tanggal", required=True, format="YYYY-MM-DD"),
-                    "jumlah_bayar": st.column_config.NumberColumn("Jumlah Bayar (Rp)", min_value=0, step=1000, format="Rp %d", required=True),
-                    "denda": st.column_config.NumberColumn("Denda (Rp)", min_value=0, step=1000, format="Rp %d", required=True),
-                    "keterangan": st.column_config.TextColumn("Keterangan"),
-                },
-                hide_index=True,
-                use_container_width=True,
-                num_rows="dynamic",
-                key=f"editor_bayar_{kid}"
-            )
+        # Logika untuk opsi tenor
+        tenor_asli = int(d['tenor'])
+        total_asli = float(d['total_hutang'])
+        
+        if tampilkan_banding:
+            tenor_opsi_1 = 2
+            tenor_opsi_2 = 3
+            rate_bulan = 0.05 
+            pokok_awal = float(d['pokok_hutang'])
             
-            if st.button("💾 Simpan Perubahan Riwayat Pembayaran"):
-                try:
-                    current_ids = df_bayar['id'].tolist()
-                    edited_ids = [int(x) for x in edited_bayar['id'].dropna().tolist()]
-                    deleted_ids = list(set(current_ids) - set(edited_ids))
-                    for did in deleted_ids:
-                        c.execute("DELETE FROM pembayaran WHERE id=?", (did,))
-
-                    for _, row in edited_bayar.iterrows():
-                        if pd.isna(row['id']):
-                            c.execute("INSERT INTO pembayaran (kredit_id, jumlah_bayar, denda, tanggal, keterangan) VALUES (?,?,?,?,?)",
-                                      (kid, row['jumlah_bayar'], row['denda'], str(row['tanggal']), row['keterangan']))
-                        else:
-                            c.execute("UPDATE pembayaran SET jumlah_bayar=?, denda=?, tanggal=?, keterangan=? WHERE id=?",
-                                      (row['jumlah_bayar'], row['denda'], str(row['tanggal']), row['keterangan'], int(row['id'])))
-                    
-                    recalculate_kredit(kid)
-                    conn.commit()
-                    log_aksi(st.session_state.username, "EDIT_PEMBAYARAN", f"Kredit ID {kid}")
-                    flash("✅ Riwayat pembayaran disimpan & Sisa Hutang disesuaikan!", "success")
-                    st.rerun()
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"❌ Gagal menyimpan pembayaran: {e}")
+            total_1 = round(pokok_awal * (1 + (rate_bulan * tenor_opsi_1)), -2)
+            cicilan_1 = round(total_1 / tenor_opsi_1, -2)
             
-            total_dibayar = df_bayar['jumlah_bayar'].sum() if not df_bayar.empty else 0
-            st.success(f"💰 **Total sudah dibayar:** {format_rp(total_dibayar)}  |  **Sisa hutang:** {format_rp(d['sisa_hutang'])}")
+            total_2 = round(pokok_awal * (1 + (rate_bulan * tenor_opsi_2)), -2)
+            cicilan_2 = round(total_2 / tenor_opsi_2, -2)
+            
+            schedule_1 = build_jadwal_angsuran(total_1, cicilan_1, tenor_opsi_1, tanggal_kredit_str)
+            schedule_2 = build_jadwal_angsuran(total_2, cicilan_2, tenor_opsi_2, tanggal_kredit_str)
+            
+            html_tenor_options = f"""
+            <div class="tenor-options">
+                <div class="tenor-card">
+                    <div class="tc-label">Opsi A</div>
+                    <div class="tc-title">Tenor {tenor_opsi_1}× ({tenor_opsi_1} Bulan)</div>
+                    <div class="tc-row"><span class="k">Bunga total (5%/bln)</span><span class="v">{format_rp(total_1 - pokok_awal)}</span></div>
+                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_1)}</span></div>
+                    <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_1)}</span></div>
+                </div>
+                <div class="tenor-card recommended">
+                    <div class="tc-label">Opsi B</div>
+                    <div class="tc-title">Tenor {tenor_opsi_2}× ({tenor_opsi_2} Bulan)</div>
+                    <div class="tc-row"><span class="k">Bunga total (5%/bln)</span><span class="v">{format_rp(total_2 - pokok_awal)}</span></div>
+                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_2)}</span></div>
+                    <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_2)}</span></div>
+                </div>
+            </div>
+            """
+            
+            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='status-pending'>BELUM</span></td></tr>" for r in schedule_1])
+            rows_2 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='status-pending'>BELUM</span></td></tr>" for r in schedule_2])
+            
+            html_schedule = f"""
+            <div class="sched-wrap" style="grid-template-columns: 1fr 1fr;">
+                <div class="sched">
+                    <div class="sched-h two">📅 Opsi A — Tenor {tenor_opsi_1}×</div>
+                    <table>
+                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
+                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="sched">
+                    <div class="sched-h three">📅 Opsi B — Tenor {tenor_opsi_2}×</div>
+                    <table>
+                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
+                        <tbody>{rows_2}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_2)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            """
         else:
-            st.info("Belum ada pembayaran — ini masih akad awal.")
-            with st.form(f"form_add_bayar_{kid}"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    new_tgl = st.date_input("Tanggal")
-                with col2:
-                    new_jml = st.number_input("Jumlah Bayar (Rp)", step=1000.0)
-                with col3:
-                    new_denda = st.number_input("Denda (Rp)", step=1000.0, value=0.0)
-                if st.form_submit_button("➕ Tambah Pembayaran"):
-                    if new_jml > 0:
-                        c.execute("INSERT INTO pembayaran (kredit_id, jumlah_bayar, denda, tanggal, keterangan) VALUES (?,?,?,?,?)",
-                                  (kid, new_jml, new_denda, str(new_tgl), "Input Manual"))
-                        recalculate_kredit(kid)
-                        conn.commit()
-                        st.rerun()
-
-        # ================= PRINT & INVOICE =================
-        st.markdown('<div class="section-header"><h3>🧾 Preview & Cetak Slip (Invoice)</h3></div>', unsafe_allow_html=True)
-
-        rows_html = ""
-        for row in schedule:
-            rows_html += f"""
-                <tr>
-                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:center;">{row['ke']}</td>
-                    <td style="padding:4px 5px; border-bottom:1px solid #ddd;">{row['jatuh_tempo']}</td>
-                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['angsuran'])}</td>
-                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:right;">{format_rp(row['sisa'])}</td>
-                    <td style="padding:4px 5px; border-bottom:1px solid #ddd; text-align:center;">{row['status']}</td>
-                </tr>
+            schedule_1 = build_jadwal_angsuran(total_asli, d['cicilan_bulan'], tenor_asli, tanggal_kredit_str)
+            
+            html_tenor_options = f"""
+            <div class="tenor-options" style="grid-template-columns: 1fr;">
+                <div class="tenor-card recommended">
+                    <div class="tc-label">Tenor Dipilih</div>
+                    <div class="tc-title">Tenor {tenor_asli}× ({tenor_asli} Bulan)</div>
+                    <div class="tc-row"><span class="k">Total hutang (Pokok + Bunga)</span><span class="v">{format_rp(total_asli)}</span></div>
+                    <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(d['cicilan_bulan'])}</span></div>
+                </div>
+            </div>
+            """
+            
+            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='status-pending'>BELUM</span></td></tr>" for r in schedule_1])
+            
+            html_schedule = f"""
+            <div class="sched-wrap" style="grid-template-columns: 1fr;">
+                <div class="sched">
+                    <div class="sched-h two">📅 Jadwal Angsuran — Tenor {tenor_asli}×</div>
+                    <table>
+                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
+                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_asli)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
             """
 
-        # Desain HTML untuk cetak (Monokrom / Hemat Tinta) dengan Footer Syarat & Ketentuan
+        # ================= PREVIEW DATA =================
+        st.markdown('<div class="section-header"><h3>📋 Ringkasan Akad Kredit</h3></div>', unsafe_allow_html=True)
+        html_metric = '<div class="metric-grid">'
+        html_metric += metric_card("Harga Cash", format_rp(d['harga_cash']), "card-blue")
+        html_metric += metric_card("DP Dibayar (Uang Masuk)", format_rp(d['dp']), "card-purple")
+        html_metric += metric_card("Pokok Hutang", format_rp(d['pokok_hutang']), "card-orange")
+        html_metric += metric_card("Total Hutang", format_rp(d['total_hutang']), "card-dark")
+        html_metric += metric_card(f"Cicilan × {int(d['tenor'])} bln", format_rp(d['cicilan_bulan']), "card-pink")
+        html_metric += metric_card("Sisa Saat Ini", format_rp(d['sisa_hutang']), "card-green" if float(d['sisa_hutang']) <= 0 else "card-dark")
+        html_metric += '</div>'
+        st.markdown(html_metric, unsafe_allow_html=True)
+
+        # ================= INVOICE HTML (DESAIN PROFESIONAL) =================
         invoice_html = f"""
         <!DOCTYPE html>
-        <html>
+        <html lang="id">
         <head>
-            <meta charset="utf-8">
-            <title>Invoice Kredit - GRACE'S STORE</title>
-            <style>
-                /* Tampilan Web Preview */
-                body {{ font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: auto; color: #000; font-size: 13px; }}
-                h2 {{ text-align: center; margin-bottom: 5px; text-transform: uppercase; font-size: 18px; }}
-                .header-info {{ text-align: center; margin-bottom: 15px; font-size: 11px; }}
-                .box {{ border: 1px solid #000; padding: 10px; margin-bottom: 10px; border-radius: 5px; }}
-                .box-title {{ font-weight: bold; border-bottom: 1px dashed #000; padding-bottom: 3px; margin-bottom: 5px; font-size: 12px; }}
-                table {{ width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 10px; }}
-                th {{ background-color: #e0e0e0; padding: 5px; text-align: left; border-bottom: 2px solid #000; }}
-                td {{ padding: 4px 5px; border-bottom: 1px dashed #ccc; }}
-                .right {{ text-align: right; }}
-                .center {{ text-align: center; }}
-                .bold {{ font-weight: bold; }}
-                .footer-terms {{ margin-top: 10px; font-size: 10px; background-color: #f9f9f9; padding: 8px; border-radius: 5px; border: 1px solid #ccc; }}
-                .signature {{ display: flex; justify-content: space-between; margin-top: 20px; text-align: center; font-size: 12px; }}
-                .signature div {{ width: 40%; border-top: 1px solid #000; padding-top: 5px; }}
+        <meta charset="utf-8">
+        <title>Invoice Kredit - GRACE'S ELECTRONIC</title>
+        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+        <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+            body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 11px; }}
+            .page {{ max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,0.15); }}
 
-                /* Pengaturan Cetak (1 Halaman A4) */
-                @media print {{
-                    @page {{
-                        size: A4 portrait;
-                        margin: 10mm; /* Margin kertas minimal */
-                    }}
-                    body {{
-                        padding: 0;
-                        margin: 0;
-                        font-size: 10px; /* Perkecil font saat cetak */
-                    }}
-                    h2 {{ font-size: 16px; margin-bottom: 2px; }}
-                    .header-info {{ font-size: 9px; margin-bottom: 10px; }}
-                    .box {{ padding: 6px; margin-bottom: 6px; page-break-inside: avoid; }}
-                    .box-title {{ font-size: 10px; margin-bottom: 3px; padding-bottom: 2px; }}
-                    table {{ font-size: 9px; margin-bottom: 6px; page-break-inside: avoid; }}
-                    th {{ padding: 3px; }}
-                    td {{ padding: 2px 4px; }}
-                    .footer-terms {{ font-size: 9px; padding: 5px; margin-top: 5px; page-break-inside: avoid; }}
-                    .signature {{ margin-top: 15px; font-size: 10px; page-break-inside: avoid; }}
-                    .no-print {{ display: none; }}
-                }}
-            </style>
+            /* HEADER */
+            .hdr {{ background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 70%, #1e40af 100%); color: #fff; padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }}
+            .hdr::before {{ content:''; position:absolute; top:-50%; right:-5%; width:220px; height:220px; background: radial-gradient(circle, rgba(16,185,129,0.3), transparent 70%); border-radius:50%; }}
+            .hdr::after {{ content:''; position:absolute; bottom:-70%; right:15%; width:180px; height:180px; background: radial-gradient(circle, rgba(245,158,11,0.25), transparent 70%); border-radius:50%; }}
+            .brand {{ position: relative; z-index:1; }}
+            .brand h1 {{ font-size: 19px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
+            .brand .tag {{ font-size: 9.5px; color: #94a3b8; letter-spacing: 0.4px; margin-top: 1px; }}
+            .brand .addr {{ font-size: 9px; color: #cbd5e1; margin-top: 4px; line-height: 1.4; }}
+            .title-box {{ text-align: right; position: relative; z-index: 1; }}
+            .badge-inv {{ display: inline-block; background: rgba(245,158,11,0.22); color: #fbbf24; padding: 3px 10px; border-radius: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(245,158,11,0.4); }}
+            .inv-no {{ font-size: 11.5px; font-weight: 700; margin-top: 5px; }}
+            .inv-date {{ font-size: 9px; color: #94a3b8; margin-top: 2px; }}
+
+            /* META STRIP */
+            .meta {{ display: flex; gap: 14px; justify-content: space-between; padding: 6px 22px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 9.5px; color: #475569; }}
+            .meta b {{ color: #0f172a; }}
+
+            /* BODY */
+            .body {{ padding: 10px 22px 12px; }}
+
+            /* TOP 2-COLUMN */
+            .top-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }}
+            .sec {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }}
+            .sec-title {{ font-size: 9.5px; font-weight: 800; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; margin-bottom: 5px; border-bottom: 1.5px solid #f1f5f9; display: flex; align-items: center; gap: 5px; }}
+            .sec-title span.ic {{ display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; background: linear-gradient(135deg,#1e3a8a,#1e40af); color: #fff; border-radius: 4px; font-size: 9px; }}
+            .kv {{ display: grid; grid-template-columns: 68px 1fr; gap: 3px 6px; font-size: 10px; }}
+            .kv .k {{ color: #64748b; }}
+            .kv .v {{ color: #0f172a; font-weight: 600; }}
+
+            /* SUMMARY ROW */
+            .summary {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }}
+            .sum-card {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; text-align: center; }}
+            .sum-card.green {{ background: #ecfdf5; border-color: #a7f3d0; }}
+            .sum-card.blue {{ background: #eff6ff; border-color: #bfdbfe; }}
+            .sum-card.amber {{ background: #fffbeb; border-color: #fde68a; }}
+            .sum-card .lbl {{ font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }}
+            .sum-card .val {{ font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 2px; }}
+            .sum-card.green .val {{ color: #065f46; }}
+            .sum-card.blue .val {{ color: #1e40af; }}
+            .sum-card.amber .val {{ color: #92400e; }}
+
+            /* OPTIONS TABLE */
+            .tenor-options {{ display: grid; gap: 8px; margin-bottom: 8px; }}
+            .tenor-card {{ position: relative; border: 1.5px solid #d1d5db; border-radius: 8px; padding: 10px 14px; }}
+            .tenor-card.recommended {{ border-color: #1e3a8a; }}
+            .tenor-card.recommended::before {{ content: 'REKOMENDASI'; position: absolute; top: -1.5px; right: -1.5px; background: #b8956a; color: #fff; font-size: 7.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; border-radius: 0 6px 0 6px; }}
+            .tc-label {{ font-size: 9px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }}
+            .tc-title {{ font-family: Georgia, serif; font-size: 14px; font-weight: 700; color: #1a2b47; margin: 2px 0 6px; }}
+            .tc-row {{ display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; }}
+            .tc-row .k {{ color: #6b7280; }}
+            .tc-row .v {{ color: #1a2b47; font-weight: 600; }}
+            .tc-row.main {{ border-top: 1px solid #e5e7eb; padding-top: 4px; margin-top: 2px; }}
+            .tc-row.main .k {{ font-weight: 700; color: #1a2b47; }}
+            .tc-row.main .v {{ font-size: 13px; font-weight: 700; color: #b8956a; }}
+
+            /* SCHEDULE 2-COLUMN */
+            .sched-wrap {{ display: grid; gap: 8px; margin-bottom: 8px; }}
+            .sched {{ border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }}
+            .sched-h {{ padding: 5px 8px; font-size: 9px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; }}
+            .sched-h.two {{ background: linear-gradient(90deg, #1e40af, #2563eb); }}
+            .sched-h.three {{ background: linear-gradient(90deg, #7c3aed, #8b5cf6); }}
+            .sched table {{ width: 100%; border-collapse: collapse; font-size: 9.5px; }}
+            .sched th {{ background: #f8fafc; color: #475569; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.3px; padding: 4px 6px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
+            .sched td {{ padding: 4px 6px; border-bottom: 1px solid #f1f5f9; }}
+            .sched tr:last-child td {{ border-bottom: none; }}
+            .sched .r {{ text-align: right; }}
+            .sched .c {{ text-align: center; }}
+            .sched .total td {{ background: #f8fafc; font-weight: 700; }}
+            .status-pending {{ display: inline-block; padding: 1px 6px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 8px; font-weight: 700; }}
+
+            /* SIGNATURE */
+            .sig-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }}
+            .sig-card {{ border: 2px dashed #1e3a8a; border-radius: 10px; padding: 10px 12px; background: linear-gradient(135deg, #f8fafc, #eff6ff); text-align: center; position: relative; }}
+            .sig-card.customer {{ border-color: #b8956a; background: linear-gradient(135deg, #faf5ff, #f3e8ff); }}
+            .sig-card .seal {{ position: absolute; top: 45%; left: 50%; transform: translate(-50%,-50%) rotate(-15deg); width: 80px; height: 80px; border: 3px solid rgba(16,185,129,0.14); border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 6.5px; font-weight: 900; color: rgba(16,185,129,0.18); text-transform: uppercase; letter-spacing: 0.8px; line-height: 1.2; pointer-events: none; }}
+            .sig-title {{ font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: #1e3a8a; margin-bottom: 4px; position: relative; z-index: 1; }}
+            .sig-card.customer .sig-title {{ color: #b8956a; }}
+            .sig-subtitle {{ font-size: 8px; color: #64748b; margin-bottom: 5px; position: relative; z-index: 1; }}
+            #signatureBarcode {{ max-width: 100%; background: #fff; padding: 3px 8px; border-radius: 4px; display: inline-block; border: 1px solid #e2e8f0; position: relative; z-index: 1; }}
+            .sig-meta {{ font-size: 8.5px; color: #475569; margin-top: 4px; line-height: 1.4; position: relative; z-index: 1; }}
+            .sig-verify {{ font-family: 'Courier New', monospace; font-size: 8px; color: #6b7280; text-align: center; margin-top: 2px; }}
+            .sig-verify b {{ color: #1a2b47; }}
+            .sign-space {{ height: 40px; border-bottom: 1.5px solid #b8956a; margin: 6px 6px 4px; position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center; }}
+            .sign-space .hint {{ font-size: 8px; color: #94a3b8; font-style: italic; padding-bottom: 2px; }}
+            .sign-name {{ font-size: 9.5px; font-weight: 700; color: #1a2b47; margin-top: 4px; position: relative; z-index: 1; }}
+            .customer-options {{ margin-top: 5px; font-size: 8px; color: #64748b; position: relative; z-index: 1; line-height: 1.5; }}
+
+            /* TERMS & FOOTER */
+            .terms-section {{ padding: 10px 22px; background: #f9fafb; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }}
+            .terms-title {{ font-family: Georgia, serif; font-size: 9px; font-weight: 700; color: #1a2b47; letter-spacing: 1.4px; text-transform: uppercase; margin-bottom: 4px; }}
+            .terms-list {{ counter-reset: item; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 20px; font-size: 9px; color: #4b5563; }}
+            .terms-list li {{ display: flex; gap: 6px; line-height: 1.5; }}
+            .terms-list li::before {{ counter-increment: item; content: counter(item); font-weight: 700; color: #b8956a; flex-shrink: 0; }}
+            .footer {{ padding: 8px 22px 12px; text-align: center; font-size: 8.5px; color: #9ca3af; line-height: 1.6; }}
+            .footer-brand {{ font-family: Georgia, serif; font-size: 9.5px; color: #1a2b47; font-weight: 700; letter-spacing: 0.8px; }}
+
+            @media print {{
+                @page {{ size: A4 portrait; margin: 6mm; }}
+                body {{ background: #fff; padding: 0; margin: 0; font-size: 9px; }}
+                .page {{ box-shadow: none; border-radius: 0; max-width: 100%; }}
+                .hdr {{ padding: 10px 16px; }}
+                .body {{ padding: 6px 16px 8px; }}
+                .meta {{ padding: 4px 16px; }}
+                .terms-section {{ padding: 8px 16px; }}
+                .footer {{ padding: 5px 16px; }}
+                * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+            }}
+        </style>
         </head>
         <body>
-            <h2>GRACE'S STORE</h2>
-            <div class="header-info">
-                Invoice / Slip Pembayaran Kredit<br>
-                No. Transaksi: <b>#{kid}</b> | Tanggal Cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}
+        <div class="page">
+            <header class="hdr">
+                <div class="brand">
+                    <h1>Grace's Electronic</h1>
+                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
+                    <div class="addr">Jl. Barong Tongkok, Kutai Barat • HP/WA: 0822-9954-8411</div>
+                </div>
+                <div class="title-box">
+                    <div class="badge-inv">Invoice Kredit</div>
+                    <div class="inv-no">#GRC-INV-{kid}</div>
+                    <div class="inv-date">{datetime.now().strftime('%d %B %Y · %H:%M')} WITA</div>
+                </div>
+            </header>
+
+            <div class="meta">
+                <div>Status: <b style="color:#059669;">● {d['status'].upper()}</b></div>
+                <div>Metode: <b>{metode_bayar}</b></div>
+                <div>Bunga Flat: <b>5% / bln</b></div>
             </div>
 
-            <div class="box">
-                <div class="box-title">👤 Data Customer</div>
-                <table style="border:none;">
-                    <tr>
-                        <td style="border:none; width: 20%;"><b>Nama</b></td>
-                        <td style="border:none;">: {d['cn']}</td>
-                        <td style="border:none; width: 20%;"><b>Telepon</b></td>
-                        <td style="border:none;">: {d['telepon'] or '-'}</td>
-                    </tr>
-                    <tr>
-                        <td style="border:none;"><b>Alamat</b></td>
-                        <td style="border:none;" colspan="3">: {d['alamat'] or '-'}</td>
-                    </tr>
-                </table>
+            <div class="body">
+                <!-- Customer + Product -->
+                <div class="top-grid">
+                    <div class="sec">
+                        <div class="sec-title"><span class="ic">👤</span> Customer</div>
+                        <div class="kv">
+                            <div class="k">Nama</div><div class="v">{d['cn']}</div>
+                            <div class="k">Telepon</div><div class="v">{d['telepon'] or '-'}</div>
+                            <div class="k">Alamat</div><div class="v">{d['alamat'] or '-'}</div>
+                        </div>
+                    </div>
+                    <div class="sec">
+                        <div class="sec-title"><span class="ic">📱</span> Produk</div>
+                        <div class="kv">
+                            <div class="k">Nama</div><div class="v">{d['pn']}</div>
+                            <div class="k">SKU</div><div class="v">GRC-{d['produk_id']}</div>
+                            <div class="k">Garansi</div><div class="v">3 Bulan</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="summary">
+                    <div class="sum-card"><div class="lbl">Harga Cash</div><div class="val">{format_rp(d['harga_cash'])}</div></div>
+                    <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(d['dp'])}</div></div>
+                    <div class="sum-card blue"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(d['pokok_hutang'])}</div></div>
+                    <div class="sum-card amber"><div class="lbl">Bunga Flat</div><div class="val">5% / bln</div></div>
+                </div>
+
+                <!-- Pilihan Tenor -->
+                {html_tenor_options}
+
+                <!-- Jadwal Angsuran -->
+                {html_schedule}
+
+                <!-- Signatures -->
+                <div class="sig-grid">
+                    <div class="sig-card">
+                        <div class="seal">GRACE'S<br>VERIFIED<br>★</div>
+                        <div class="sig-title">✓ Tanda Tangan Toko</div>
+                        <div class="sig-subtitle">Digital — Sah &amp; Terverifikasi</div>
+                        <svg id="signatureBarcode"></svg>
+                        <div class="sig-verify"><b>Kode:</b> GRC-{kid}-TN</div>
+                        <div class="sig-verify"><b>Tgl:</b> {datetime.now().strftime('%d-%m-%Y %H:%M')}</div>
+                    </div>
+                    <div class="sig-card customer">
+                        <div class="sig-title">✍ Tanda Tangan Customer</div>
+                        <div class="sig-subtitle">Manual (basah) atau E-Sign</div>
+                        <div class="sign-space"><span class="hint">[ Tanda tangan di sini ]</span></div>
+                        <div class="sign-name">( {d['cn']} )</div>
+                        <div class="customer-options"><b>Tenor:</b> ☐ {tenor_asli}x &nbsp; <b>Metode:</b> ☐ Manual ☐ E-Sign</div>
+                    </div>
+                </div>
             </div>
 
-            <div class="box">
-                <div class="box-title">📱 Informasi Produk</div>
-                <table style="border:none;">
-                    <tr>
-                        <td style="border:none; width: 20%;"><b>Nama Produk</b></td>
-                        <td style="border:none;">: {d['pn']}</td>
-                        <td style="border:none; width: 20%;"><b>Status Kredit</b></td>
-                        <td style="border:none;">: <b>{d['status']}</b></td>
-                    </tr>
-                </table>
+            <!-- Terms -->
+            <div class="terms-section">
+                <div class="terms-title">Syarat &amp; Ketentuan</div>
+                <ol class="terms-list">
+                    <li><b>Metode:</b> Tunai atau transfer bank sesuai kesepakatan.</li>
+                    <li><b>Jatuh Tempo:</b> Setiap 30 hari, dimulai {d['jatuh_tempo']}.</li>
+                    <li><b>Bunga:</b> Flat 5% per bulan dari pokok hutang.</li>
+                    <li><b>Keterlambatan:</b> Denda {denda_harian}% per hari dari angsuran.</li>
+                </ol>
             </div>
 
-            <div class="box">
-                <div class="box-title">💰 Rincian Pembayaran & Uang Masuk (DP)</div>
-                <table>
-                    <tr>
-                        <td>Harga Cash</td>
-                        <td class="right">{format_rp(d['harga_cash'])}</td>
-                    </tr>
-                    <tr>
-                        <td class="bold" style="color: #000; font-size: 14px;">DP Telah Dibayar (Uang Masuk)</td>
-                        <td class="right bold" style="font-size: 14px;">{format_rp(d['dp'])}</td>
-                    </tr>
-                    <tr>
-                        <td>Pokok Hutang</td>
-                        <td class="right">{format_rp(d['pokok_hutang'])}</td>
-                    </tr>
-                    <tr>
-                        <td>Total Hutang (Pokok + Bunga)</td>
-                        <td class="right bold">{format_rp(d['total_hutang'])}</td>
-                    </tr>
-                    <tr>
-                        <td>Tenor</td>
-                        <td class="right">{int(d['tenor'])} Bulan</td>
-                    </tr>
-                    <tr>
-                        <td class="bold">Cicilan / Bulan</td>
-                        <td class="right bold" style="font-size: 14px;">{format_rp(d['cicilan_bulan'])}</td>
-                    </tr>
-                    <tr>
-                        <td>Sisa Hutang Saat Ini</td>
-                        <td class="right bold">{format_rp(d['sisa_hutang'])}</td>
-                    </tr>
-                    <tr>
-                        <td>Jatuh Tempo Berikutnya</td>
-                        <td class="right">{d['jatuh_tempo']}</td>
-                    </tr>
-                </table>
-            </div>
-
-            <div class="box">
-                <div class="box-title">📅 Jadwal Angsuran (Per Tenor)</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="center" style="width: 50px;">Ke-</th>
-                            <th>Jatuh Tempo</th>
-                            <th class="right">Angsuran</th>
-                            <th class="right">Sisa Hutang</th>
-                            <th class="center">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows_html}
-                    </tbody>
-                </table>
-            </div>
-            
-            <div class="footer-terms">
-                <div style="font-weight: bold; margin-bottom: 5px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px;">SYARAT & KETENTUAN PEMBAYARAN</div>
-                <table style="border: none; margin-bottom: 0;">
-                    <tr>
-                        <td style="border:none; width: 35%;"><b>Metode Pembayaran</b></td>
-                        <td style="border:none;">: <b>{metode_bayar}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="border:none;"><b>Term of Payment (Jatuh Tempo)</b></td>
-                        <td style="border:none;">: Setiap 30 hari sekali (Tempo berikutnya: {d['jatuh_tempo']})</td>
-                    </tr>
-                    <tr>
-                        <td style="border:none;"><b>Biaya Adm. Keterlambatan</b></td>
-                        <td style="border:none;">: <b>{denda_harian}% / hari</b> dari jumlah angsuran</td>
-                    </tr>
-                </table>
-            </div>
-
-            <div class="signature">
-                <div>Pihak Toko (Hormat Kami)</div>
-                <div>Customer (Penerima)</div>
-            </div>
-            
-            <p class="center" style="font-size: 10px; margin-top: 15px; color: #555;">
-                Slip ini adalah bukti sah akad kredit GRACE'S STORE.<br>
-                Simpan slip ini untuk keperluan pembayaran angsuran selanjutnya.
-            </p>
+            <footer class="footer">
+                <div class="footer-brand">GRACE'S ELECTRONIC</div>
+                <div>Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan untuk pembayaran berikutnya.</div>
+                <div style="font-size:7.5px; margin-top:2px;">Pemalsuan dokumen dapat ditindak sesuai hukum yang berlaku di Republik Indonesia.</div>
+            </footer>
+        </div>
+        
+        <script>
+            window.onload = function() {{
+                JsBarcode("#signatureBarcode", "GRC-{kid}-TN", {{
+                    format: "CODE128",
+                    width: 1.2,
+                    height: 34,
+                    displayValue: false,
+                    margin: 0,
+                    lineColor: "#1a2b47",
+                    background: "#ffffff"
+                }});
+            }};
+        </script>
         </body>
         </html>
         """
