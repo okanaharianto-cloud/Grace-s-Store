@@ -1256,6 +1256,23 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             * {{ box-sizing: border-box; margin: 0; padding: 0; }}
             body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 11px; }}
             .page {{ max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,0.15); }}
+            
+            /* Tombol Print - Fixed di atas */
+            .btn-print-wrap {{
+                position: sticky;
+                top: 0;
+                z-index: 9999;
+                background: #e2e8f0;
+                padding: 10px 0;
+                text-align: center;
+            }}
+            .btn-print {{
+                background-color: #667eea; color: white; border: none;
+                padding: 12px 24px; font-size: 16px; border-radius: 8px;
+                cursor: pointer; font-weight: bold; width: 100%; max-width: 820px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }}
+            .btn-print:hover {{ background-color: #764ba2; }}
 
             /* HEADER */
             .hdr {{ background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 70%, #1e40af 100%); color: #fff; padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }}
@@ -1357,17 +1374,23 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             @media print {{
                 @page {{ size: A4 portrait; margin: 6mm; }}
                 body {{ background: #fff; padding: 0; margin: 0; font-size: 9px; }}
-                .page {{ box-shadow: none; border-radius: 0; max-width: 100%; }}
+                .btn-print-wrap {{ display: none !important; }}
+                .page {{ box-shadow: none; border-radius: 0; max-width: 100%; width: 100%; border: none; }}
                 .hdr {{ padding: 10px 16px; }}
                 .body {{ padding: 6px 16px 8px; }}
                 .meta {{ padding: 4px 16px; }}
                 .terms-section {{ padding: 8px 16px; }}
                 .footer {{ padding: 5px 16px; }}
-                * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+                * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
             }}
         </style>
         </head>
         <body>
+        
+        <div class="btn-print-wrap">
+            <button class="btn-print" onclick="window.print()">🖨️ Cetak Sekarang (Print / Simpan PDF)</button>
+        </div>
+
         <div class="page">
             <header class="hdr">
                 <div class="brand">
@@ -1479,37 +1502,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         """
 
         # Tampilkan tombol Print JavaScript
-        components.html(
-            f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 0; padding: 10px; }}
-                    .btn-print {{
-                        background-color: #667eea; color: white; border: none;
-                        padding: 12px 24px; font-size: 16px; border-radius: 8px;
-                        cursor: pointer; display: block; margin: 0 auto 15px auto;
-                        font-weight: bold; width: 100%;
-                    }}
-                    .btn-print:hover {{ background-color: #764ba2; }}
-                    .print-area {{ border: 1px solid #ddd; padding: 20px; border-radius: 10px; background: white; }}
-                    @media print {{
-                        .btn-print {{ display: none; }}
-                        .print-area {{ border: none; padding: 0; }}
-                    }}
-                </style>
-            </head>
-            <body>
-                <button class="btn-print" onclick="window.print()">🖨️ Cetak Sekarang (Print / Simpan PDF)</button>
-                <div class="print-area">
-                    {invoice_html.split('<body>')[1].split('</body>')[0]}
-                </div>
-            </body>
-            </html>
-            """,
-            height=1000,
-            scrolling=True
-        )
+        components.html(invoice_html, height=1200, scrolling=True)
+        
+        st.info("💡 **Tips Cetak:** Jika saat mencetak (Print) layout di atas terpotong, silakan klik tombol **📥 Download File Slip (HTML)** di bawah ini. Buka file tersebut di browser (Chrome/Edge), lalu tekan **Ctrl+P** untuk mendapatkan hasil PDF yang 100% sempurna.")
         
         st.download_button(
             f"📥 Download File Slip (HTML)",
