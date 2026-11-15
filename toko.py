@@ -1215,6 +1215,12 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         
         # Toggle perbandingan tenor
         tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor", value=True, help="Aktifkan untuk menampilkan 2 opsi tenor (misal 2x & 3x) untuk perbandingan. Matikan untuk hanya menampilkan 1 tenor yang dipilih.")
+        # Toggle Hide Sensitif
+        hide_sensitive = st.toggle("🙈 Sembunyikan Pokok Hutang & Bunga (Mode Pelanggan)", value=False, help="Jika aktif, rincian Pokok Hutang, Bunga Flat, dan Sisa Hutang akan disembunyikan di cetakan.")
+        
+        hide_style = "display: none !important;" if hide_sensitive else ""
+        hide_col_style = "display: none !important;" if hide_sensitive else "table-cell"
+        grid_cols = "repeat(2, 1fr)" if hide_sensitive else "repeat(4, 1fr)"
 
         if tampilkan_banding:
             tenor_opsi_1 = 2
@@ -1280,38 +1286,38 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <div class="tenor-card">
                     <div class="tc-label">Opsi A</div>
                     <div class="tc-title">Tenor {tenor_opsi_1}× ({tenor_opsi_1} Bulan)</div>
-                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_1_edit - pokok_awal)}</span></div>
-                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_1_edit)}</span></div>
+                    <div class="tc-row" style="{hide_style}"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_1_edit - pokok_awal)}</span></div>
+                    <div class="tc-row" style="{hide_style}"><span class="k">Total hutang</span><span class="v">{format_rp(total_1_edit)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_1)}</span></div>
                 </div>
                 <div class="tenor-card recommended">
                     <div class="tc-label">Opsi B</div>
                     <div class="tc-title">Tenor {tenor_opsi_2}× ({tenor_opsi_2} Bulan)</div>
-                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_2_edit - pokok_awal)}</span></div>
-                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_2_edit)}</span></div>
+                    <div class="tc-row" style="{hide_style}"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_2_edit - pokok_awal)}</span></div>
+                    <div class="tc-row" style="{hide_style}"><span class="k">Total hutang</span><span class="v">{format_rp(total_2_edit)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_2)}</span></div>
                 </div>
             </div>
             """
             
             paid_count = len(df_bayar)
-            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_1.iterrows()])
-            rows_2 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_2.iterrows()])
+            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r' style='{hide_col_style}'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_1.iterrows()])
+            rows_2 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r' style='{hide_col_style}'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_2.iterrows()])
             
             html_schedule = f"""
             <div class="sched-wrap" style="grid-template-columns: 1fr 1fr;">
                 <div class="sched">
                     <div class="sched-h two">📅 Opsi A — Tenor {tenor_opsi_1}×</div>
                     <table>
-                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
-                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1_edit)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r" style="{hide_col_style}">Sisa</th><th class="c">Status</th></tr></thead>
+                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1_edit)}</td><td class="r" style="{hide_col_style}">Rp 0</td><td class="c">—</td></tr></tbody>
                     </table>
                 </div>
                 <div class="sched">
                     <div class="sched-h three">📅 Opsi B — Tenor {tenor_opsi_2}×</div>
                     <table>
-                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
-                        <tbody>{rows_2}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_2_edit)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r" style="{hide_col_style}">Sisa</th><th class="c">Status</th></tr></thead>
+                        <tbody>{rows_2}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_2_edit)}</td><td class="r" style="{hide_col_style}">Rp 0</td><td class="c">—</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -1346,22 +1352,22 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <div class="tenor-card recommended">
                     <div class="tc-label">Tenor Dipilih</div>
                     <div class="tc-title">Tenor {tenor_asli}× ({tenor_asli} Bulan)</div>
-                    <div class="tc-row"><span class="k">Total hutang (Pokok + Bunga)</span><span class="v">{format_rp(total_1_edit)}</span></div>
+                    <div class="tc-row" style="{hide_style}"><span class="k">Total hutang (Pokok + Bunga)</span><span class="v">{format_rp(total_1_edit)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(m_cicilan)}</span></div>
                 </div>
             </div>
             """
             
             paid_count = len(df_bayar)
-            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_1.iterrows()])
+            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r' style='{hide_col_style}'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_1.iterrows()])
             
             html_schedule = f"""
             <div class="sched-wrap" style="grid-template-columns: 1fr;">
                 <div class="sched">
                     <div class="sched-h two">📅 Jadwal Angsuran — Tenor {tenor_asli}×</div>
                     <table>
-                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
-                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1_edit)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                        <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r" style="{hide_col_style}">Sisa</th><th class="c">Status</th></tr></thead>
+                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1_edit)}</td><td class="r" style="{hide_col_style}">Rp 0</td><td class="c">—</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -1439,7 +1445,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .kv .v {{ color: #0f172a; font-weight: 600; }}
 
             /* SUMMARY ROW */
-            .summary {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }}
+            .summary {{ display: grid; grid-template-columns: {grid_cols}; gap: 6px; margin-bottom: 8px; }}
             .sum-card {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; text-align: center; }}
             .sum-card.green {{ background: #ecfdf5; border-color: #a7f3d0; }}
             .sum-card.blue {{ background: #eff6ff; border-color: #bfdbfe; }}
@@ -1543,7 +1549,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div class="meta">
                 <div>Status: <b style="color:#059669;">● {m_status.upper()}</b></div>
                 <div>Metode: <b>{m_metode}</b></div>
-                <div>Bunga Flat: <b>{(rate_bulan*100):.2f}% / bln</b></div>
+                <div style="{hide_style}">Bunga Flat: <b>{(rate_bulan*100):.2f}% / bln</b></div>
             </div>
 
             <div class="body">
@@ -1571,8 +1577,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <div class="summary">
                     <div class="sum-card"><div class="lbl">Harga Cash</div><div class="val">{format_rp(m_harga_cash)}</div></div>
                     <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(m_dp)}</div></div>
-                    <div class="sum-card blue"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(m_pokok)}</div></div>
-                    <div class="sum-card amber"><div class="lbl">Bunga Flat</div><div class="val">{(rate_bulan*100):.2f}% / bln</div></div>
+                    <div class="sum-card blue" style="{hide_style}"><div class="lbl">Pokok Hutang</div><div class="val">{format_rp(m_pokok)}</div></div>
+                    <div class="sum-card amber" style="{hide_style}"><div class="lbl">Bunga Flat</div><div class="val">{(rate_bulan*100):.2f}% / bln</div></div>
                 </div>
 
                 <!-- Pilihan Tenor -->
@@ -1607,7 +1613,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <ol class="terms-list">
                     <li><b>Metode:</b> Tunai atau transfer bank sesuai kesepakatan.</li>
                     <li><b>Jatuh Tempo:</b> Setiap 30 hari, dimulai {m_tempo.strftime('%d-%m-%Y')}.</li>
-                    <li><b>Bunga:</b> Flat {(rate_bulan*100):.2f}% per bulan dari pokok hutang.</li>
+                    <li style="{hide_style}"><b>Bunga:</b> Flat {(rate_bulan*100):.2f}% per bulan dari pokok hutang.</li>
                     <li><b>Keterlambatan:</b> Denda {get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari dari angsuran.</li>
                 </ol>
             </div>
