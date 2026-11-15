@@ -1215,31 +1215,60 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             total_2 = round(pokok_awal * (1 + (rate_bulan * tenor_opsi_2)), -2)
             cicilan_2 = round(total_2 / tenor_opsi_2, -2)
             
-            schedule_1 = build_jadwal_angsuran(total_1, cicilan_1, tenor_opsi_1, tanggal_kredit_str)
-            schedule_2 = build_jadwal_angsuran(total_2, cicilan_2, tenor_opsi_2, tanggal_kredit_str)
+            # --- FITUR BARU: EDIT JADWAL ANGSURAN (OPSI A & B) ---
+            st.markdown("### ✏️ Edit Tabel Jadwal (Opsi A & B)")
+            col_s1, col_s2 = st.columns(2)
             
+            with col_s1:
+                st.markdown("**Tabel Opsi A**")
+                df_sched_1 = pd.DataFrame(build_jadwal_angsuran(total_1, cicilan_1, tenor_opsi_1, tanggal_kredit_str))
+                df_sched_1['jatuh_tempo'] = pd.to_datetime(df_sched_1['jatuh_tempo'], format="%d-%m-%Y").dt.date
+                edited_sched_1 = st.data_editor(df_sched_1, disabled=["ke", "sisa"], hide_index=True, key="edit_sched_1",
+                    column_config={"ke": "Ke", "jatuh_tempo": "Tgl Tempo", "angsuran": "Nominal", "sisa": "Sisa"})
+                
+                # Hitung ulang total A dan sisa
+                total_1_edit = edited_sched_1['angsuran'].sum()
+                sisa_a = total_1_edit
+                for i in range(len(edited_sched_1)):
+                    sisa_a -= edited_sched_1.iloc[i]['angsuran']
+                    edited_sched_1.at[i, 'sisa'] = max(sisa_a, 0)
+                    
+            with col_s2:
+                st.markdown("**Tabel Opsi B**")
+                df_sched_2 = pd.DataFrame(build_jadwal_angsuran(total_2, cicilan_2, tenor_opsi_2, tanggal_kredit_str))
+                df_sched_2['jatuh_tempo'] = pd.to_datetime(df_sched_2['jatuh_tempo'], format="%d-%m-%Y").dt.date
+                edited_sched_2 = st.data_editor(df_sched_2, disabled=["ke", "sisa"], hide_index=True, key="edit_sched_2",
+                    column_config={"ke": "Ke", "jatuh_tempo": "Tgl Tempo", "angsuran": "Nominal", "sisa": "Sisa"})
+                    
+                total_2_edit = edited_sched_2['angsuran'].sum()
+                sisa_b = total_2_edit
+                for i in range(len(edited_sched_2)):
+                    sisa_b -= edited_sched_2.iloc[i]['angsuran']
+                    edited_sched_2.at[i, 'sisa'] = max(sisa_b, 0)
+            
+            # Generate HTML dari hasil edit
             html_tenor_options = f"""
             <div class="tenor-options">
                 <div class="tenor-card">
                     <div class="tc-label">Opsi A</div>
                     <div class="tc-title">Tenor {tenor_opsi_1}× ({tenor_opsi_1} Bulan)</div>
-                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_1 - pokok_awal)}</span></div>
-                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_1)}</span></div>
+                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_1_edit - pokok_awal)}</span></div>
+                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_1_edit)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_1)}</span></div>
                 </div>
                 <div class="tenor-card recommended">
                     <div class="tc-label">Opsi B</div>
                     <div class="tc-title">Tenor {tenor_opsi_2}× ({tenor_opsi_2} Bulan)</div>
-                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_2 - pokok_awal)}</span></div>
-                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_2)}</span></div>
+                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100):.2f}%/bln)</span><span class="v">{format_rp(total_2_edit - pokok_awal)}</span></div>
+                    <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_2_edit)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_2)}</span></div>
                 </div>
             </div>
             """
             
             paid_count = len(df_bayar)
-            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for r in schedule_1])
-            rows_2 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for r in schedule_2])
+            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_1.iterrows()])
+            rows_2 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_2.iterrows()])
             
             html_schedule = f"""
             <div class="sched-wrap" style="grid-template-columns: 1fr 1fr;">
@@ -1247,14 +1276,14 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     <div class="sched-h two">📅 Opsi A — Tenor {tenor_opsi_1}×</div>
                     <table>
                         <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
-                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1_edit)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
                     </table>
                 </div>
                 <div class="sched">
                     <div class="sched-h three">📅 Opsi B — Tenor {tenor_opsi_2}×</div>
                     <table>
                         <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
-                        <tbody>{rows_2}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_2)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                        <tbody>{rows_2}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_2_edit)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -1262,19 +1291,32 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         else:
             schedule_1 = build_jadwal_angsuran(total_asli, m_cicilan, tenor_asli, tanggal_kredit_str)
             
+            # --- FITUR BARU: EDIT JADWAL ANGSURAN (SINGLE) ---
+            st.markdown("### ✏️ Edit Tabel Jadwal")
+            df_sched_1 = pd.DataFrame(schedule_1)
+            df_sched_1['jatuh_tempo'] = pd.to_datetime(df_sched_1['jatuh_tempo'], format="%d-%m-%Y").dt.date
+            edited_sched_1 = st.data_editor(df_sched_1, disabled=["ke", "sisa"], hide_index=True, key="edit_sched_1_single",
+                column_config={"ke": "Ke", "jatuh_tempo": "Tgl Tempo", "angsuran": "Nominal", "sisa": "Sisa"})
+                
+            total_1_edit = edited_sched_1['angsuran'].sum()
+            sisa_a = total_1_edit
+            for i in range(len(edited_sched_1)):
+                sisa_a -= edited_sched_1.iloc[i]['angsuran']
+                edited_sched_1.at[i, 'sisa'] = max(sisa_a, 0)
+            
             html_tenor_options = f"""
             <div class="tenor-options" style="grid-template-columns: 1fr;">
                 <div class="tenor-card recommended">
                     <div class="tc-label">Tenor Dipilih</div>
                     <div class="tc-title">Tenor {tenor_asli}× ({tenor_asli} Bulan)</div>
-                    <div class="tc-row"><span class="k">Total hutang (Pokok + Bunga)</span><span class="v">{format_rp(total_asli)}</span></div>
+                    <div class="tc-row"><span class="k">Total hutang (Pokok + Bunga)</span><span class="v">{format_rp(total_1_edit)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(m_cicilan)}</span></div>
                 </div>
             </div>
             """
             
             paid_count = len(df_bayar)
-            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for r in schedule_1])
+            rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo'].strftime('%d-%m-%Y')}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for _, r in edited_sched_1.iterrows()])
             
             html_schedule = f"""
             <div class="sched-wrap" style="grid-template-columns: 1fr;">
@@ -1282,7 +1324,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     <div class="sched-h two">📅 Jadwal Angsuran — Tenor {tenor_asli}×</div>
                     <table>
                         <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
-                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_asli)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL</td><td class="r">{format_rp(total_1_edit)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
                     </table>
                 </div>
             </div>
