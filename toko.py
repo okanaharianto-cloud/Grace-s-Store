@@ -706,10 +706,19 @@ elif pilihan == "💰 Pembayaran Cicilan":
         st.dataframe(df_bayar, use_container_width=True, hide_index=True)
 
 elif pilihan == "🖨️ Cetak Slip Kredit":
-    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian</h1><p>Desain Invoice Modern & Surat Perjanjian Persis PDF</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian</h1><p>Edit, Simpan, dan Cetak Dokumen</p></div>', unsafe_allow_html=True)
+
+    # Pastikan tabel kustom ada
+    c.execute('''CREATE TABLE IF NOT EXISTS invoice_kustom (
+        kredit_id INTEGER PRIMARY KEY,
+        no_invoice TEXT,
+        nik TEXT,
+        catatan_tambahan TEXT
+    )''')
+    conn.commit()
 
     df_kredit_cetak = pd.read_sql_query("""
-        SELECT k.id, c.nama as customer_nama, c.telepon, c.alamat, c.nik, c.tanggal_lahir,
+        SELECT k.id, c.nama as customer_nama, c.telepon, c.alamat, c.nik as nik_default, c.tanggal_lahir,
                p.nama as produk_nama, k.harga_cash, k.dp, k.pokok_hutang, k.total_hutang,
                k.tenor, k.cicilan_bulan, k.sisa_hutang, k.jatuh_tempo, k.status, k.tanggal_kredit
         FROM kredit k
@@ -724,18 +733,39 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         pilih_id = st.selectbox("Pilih ID Kredit untuk dicetak", df_kredit_cetak['id'].tolist())
         kredit_data = df_kredit_cetak[df_kredit_cetak['id'] == pilih_id].iloc[0]
 
-        # --- FITUR EDIT MANUAL SEBELUM CETAK ---
-        st.markdown("### ✏️ Kustomisasi Sebelum Cetak")
-        col_ed1, col_ed2 = st.columns(2)
-        with col_ed1:
-            # Default menggunakan ID, tapi bisa diubah manual
-            no_invoice = st.text_input("Nomor Invoice (Bisa Diedit)", value=f"INV-{kredit_data['id']}")
-        with col_ed2:
-            # Menampilkan NIK agar bisa dipastikan sesuai KTP
-            nik_tampil = st.text_input("NIK (Sesuai KTP)", value=kredit_data['nik'] or "")
-            
-        st.info(f"Pastikan data **{kredit_data['customer_nama']}** sudah benar. Jika NIK kosong, silakan isi di atas atau edit di menu Data Customer.")
+        # Ambil data kustom jika sudah pernah disimpan
+        row_kustom = c.execute("SELECT no_invoice, nik, catatan_tambahan FROM invoice_kustom WHERE kredit_id=?", (pilih_id,)).fetchone()
+        
+        default_inv = row_kustom[0] if row_kustom else f"INV-{pilih_id}"
+        default_nik = row_kustom[1] if row_kustom else (kredit_data['nik_default'] or "")
+        default_catatan = row_kustom[2] if row_kustom else "Barang yang sudah dibeli tidak dapat ditukar atau dikembalikan."
 
+        st.markdown("### ✏️ Edit Dokumen Sebelum Cetak")
+        with st.form("form_edit_invoice"):
+            col1, col2 = st.columns(2)
+            with col1:
+                no_invoice = st.text_input("Nomor Invoice", value=default_inv)
+            with col2:
+                nik_tampil = st.text_input("NIK (Sesuai KTP)", value=default_nik)
+            
+            catatan_tambahan = st.text_area("Syarat & Ketentuan Tambahan (Halaman 1)", value=default_catatan)
+            
+            simpan_btn = st.form_submit_button("💾 Simpan Perubahan")
+            
+            if simpan_btn:
+                c.execute("""
+                    INSERT INTO invoice_kustom (kredit_id, no_invoice, nik, catatan_tambahan)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(kredit_id) DO UPDATE SET
+                    no_invoice=excluded.no_invoice,
+                    nik=excluded.nik,
+                    catatan_tambahan=excluded.catatan_tambahan
+                """, (pilih_id, no_invoice, nik_tampil, catatan_tambahan))
+                conn.commit()
+                flash("Perubahan dokumen berhasil disimpan!")
+                st.rerun()
+
+        # Proses Generate HTML menggunakan data yang sudah diedit
         df_jadwal = pd.DataFrame(build_jadwal_angsuran(
             kredit_data['total_hutang'], kredit_data['cicilan_bulan'],
             kredit_data['tenor'], kredit_data['tanggal_kredit']
@@ -759,7 +789,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         cicilan = kredit_data['cicilan_bulan']
         total_bulan_terakhir = cicilan + biaya_materai
         
-        # Build Table Rows
         jadwal_rows = ""
         for _, row in df_jadwal.iterrows():
             jadwal_rows += f"""
@@ -770,7 +799,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <td class="c"><span class="status-badge">BELUM</span></td>
             </tr>"""
 
-        # Build HTML
         html_slip = f"""
         <!DOCTYPE html>
         <html lang="id">
@@ -783,12 +811,10 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 11px; }}
             .page {{ max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,0.15); margin-bottom: 20px; }}
             
-            /* Tombol Print */
             .btn-print-wrap {{ position: sticky; top: 0; z-index: 9999; background: #e2e8f0; padding: 10px 0; text-align: center; }}
             .btn-print {{ background-color: #1e3a8a; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; max-width: 820px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
             .btn-print:hover {{ background-color: #2563eb; }}
 
-            /* HEADER */
             .hdr {{ background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 70%, #1e40af 100%); color: #fff; padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }}
             .brand {{ position: relative; z-index:1; }}
             .brand h1 {{ font-size: 19px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
@@ -799,14 +825,11 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .inv-no {{ font-size: 14px; font-weight: 800; margin-top: 5px; }}
             .inv-date {{ font-size: 9px; color: #94a3b8; margin-top: 2px; }}
 
-            /* META STRIP */
             .meta {{ display: flex; gap: 14px; justify-content: space-between; padding: 6px 22px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 9.5px; color: #475569; }}
             .meta b {{ color: #0f172a; }}
 
-            /* BODY */
             .body {{ padding: 15px 22px 20px; }}
 
-            /* TOP 2-COLUMN */
             .top-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }}
             .sec {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }}
             .sec-title {{ font-size: 9.5px; font-weight: 800; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; margin-bottom: 5px; border-bottom: 1.5px solid #f1f5f9; display: flex; align-items: center; gap: 5px; }}
@@ -814,7 +837,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .kv .k {{ color: #64748b; }}
             .kv .v {{ color: #0f172a; font-weight: 600; }}
 
-            /* SUMMARY CARDS */
             .summary-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }}
             .sum-card {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; text-align: center; }}
             .sum-card.green {{ background: #ecfdf5; border-color: #a7f3d0; }}
@@ -824,7 +846,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .sum-card.green .val {{ color: #065f46; }}
             .sum-card.amber .val {{ color: #92400e; }}
 
-            /* SCHEDULE TABLE */
             .sched {{ border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }}
             .sched-h {{ padding: 6px 10px; font-size: 10px; font-weight: 800; color: #fff; background: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; }}
             .sched table {{ width: 100%; border-collapse: collapse; font-size: 10px; }}
@@ -837,14 +858,12 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .sched .total-row td {{ background: #f1f5f9; font-weight: bold; color: #1e3a8a; border-top: 2px solid #cbd5e1; }}
             .status-badge {{ display: inline-block; padding: 1px 6px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 8px; font-weight: 700; }}
 
-            /* CATATAN & WARNING */
-            .catatan {{ font-size: 9px; color: #475569; margin-bottom: 12px; line-height: 1.4; }}
+            .catatan {{ font-size: 9px; color: #475569; margin-bottom: 12px; line-height: 1.4; white-space: pre-wrap; }}
             .transfer-box {{ border: 1px dashed #3b82f6; background: #eff6ff; padding: 10px; text-align: center; border-radius: 8px; margin-bottom: 12px; font-size: 10px; color: #1e3a8a; }}
             .warning-box {{ background: #fff1f2; border: 1px solid #f43f5e; padding: 10px; border-radius: 8px; margin-bottom: 15px; }}
             .warning-title {{ color: #be123c; font-weight: bold; font-size: 10px; margin-bottom: 4px; text-transform: uppercase; }}
             .warning-text {{ font-size: 9px; color: #000; line-height: 1.4; text-align: justify; }}
 
-            /* PERJANJIAN RAPI */
             .agreement-container {{ background: #ffffff; border: 2px solid #000000; padding: 25px; margin-top: 15px; margin-bottom: 15px; font-family: 'Times New Roman', Times, serif; font-size: 11px; color: #000000; line-height: 1.6; }}
             .agreement-title {{ text-align: center; font-weight: bold; font-size: 12px; text-decoration: underline; margin-bottom: 4px; }}
             .agreement-number {{ text-align: center; font-weight: bold; margin-bottom: 15px; }}
@@ -853,14 +872,12 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .agreement-articles ol {{ margin-left: 20px; margin-bottom: 10px; text-align: justify; }}
             .agreement-articles ol li {{ margin-bottom: 5px; padding-left: 5px; }}
 
-            /* SIGNATURE AREA */
             .signature-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px; }}
             .sig-box {{ text-align: center; position: relative; }}
             .sig-title {{ font-size: 10px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }}
             
             .sig-box-kreditur {{ border: 1px solid #93c5fd; background: #eff6ff; border-radius: 8px; padding: 15px; position: relative; margin-bottom: 10px; }}
             .cert-badge {{ display: flex; align-items: center; justify-content: center; gap: 5px; color: #0284c7; font-size: 10px; font-weight: bold; margin-bottom: 5px; }}
-            .cert-badge svg {{ width: 14px; height: 14px; fill: currentColor; }}
             .sig-name-bold {{ font-weight: bold; font-size: 11px; margin-bottom: 3px; }}
             .sig-sub {{ font-size: 9px; color: #64748b; line-height: 1.3; margin-bottom: 10px; }}
             
@@ -965,7 +982,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 </div>
                 
                 <div class="catatan">
-                    *Catatan: Terdapat Biaya Administrasi/Materai sebesar {format_rp(biaya_materai)} (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir (ke-{kredit_data['tenor']}). Total yang disetor pada bulan ke-{kredit_data['tenor']} adalah {format_rp(total_bulan_terakhir)}.
+                    *Catatan: {catatan_tambahan}
                 </div>
                 
                 <div class="transfer-box">
@@ -1120,6 +1137,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         </html>
         """
         
+        st.markdown("---")
+        # Tampilkan HTML di dalam iframe
         components.html(html_slip, height=1600, scrolling=True)
 
 elif pilihan == "👥 Data Customer":
