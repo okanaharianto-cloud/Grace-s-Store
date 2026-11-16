@@ -11,6 +11,7 @@ import altair as alt
 import streamlit.components.v1 as components
 import io
 from PIL import Image
+import zipfile
 
 # ==================== KONFIGURASI HALAMAN ====================
 st.set_page_config(
@@ -91,7 +92,7 @@ def get_connection():
 conn = get_connection()
 c = conn.cursor()
 
-# ==================== STRUKTUR DATABASE (DENGAN FITUR BARU) ====================
+# ==================== STRUKTUR DATABASE ====================
 c.execute('''CREATE TABLE IF NOT EXISTS produk (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
 c.execute('''CREATE TABLE IF NOT EXISTS transaksi_in (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS transaksi_cash (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, harga_jual_satuan REAL, total_harga REAL, uang_bayar REAL, kembalian REAL, laba REAL, tanggal TEXT)''')
@@ -102,7 +103,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREM
 c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
-# TABEL BARU UNTUK FITUR SERAH TERIMA
 c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
 conn.commit()
 
@@ -115,7 +115,6 @@ for sql in [
     "ALTER TABLE kredit ADD COLUMN tanggal_kredit TEXT",
     "ALTER TABLE kredit ADD COLUMN updated_at TEXT",
     "ALTER TABLE kredit ADD COLUMN updated_by TEXT",
-    # KOLOM BARU UNTUK KTP & KK
     "ALTER TABLE customer ADD COLUMN nik TEXT",
     "ALTER TABLE customer ADD COLUMN tanggal_lahir TEXT",
     "ALTER TABLE customer ADD COLUMN status_kawin TEXT",
@@ -133,7 +132,7 @@ try:
 except Exception:
     pass
 
-# ==================== SEED PENGATURAN DEFAULT ====================
+# ==================== SEED PENGATURAN ====================
 DEFAULT_PENGATURAN = {
     "markup_default_persen":     ("5.0",   "Markup default (%) untuk produk non-pakaian"),
     "bunga_flat_6bln_persen":    ("40.0",  "Bunga flat per 6 bulan (%) untuk kredit"),
@@ -261,7 +260,6 @@ def save_uploaded_file(uploaded_file, prefix):
         return file_path
     return None
 
-# Seed admin
 c.execute("SELECT COUNT(*) FROM users")
 if c.fetchone()[0] == 0:
     c.execute("INSERT INTO users (username, password, nama_lengkap, role) VALUES (?,?,?,?)", ("admin", hash_password("admin123"), "Administrator", "admin"))
@@ -354,7 +352,7 @@ if not st.session_state.logged_in:
         st.info("🔑 Default admin: **admin** / **admin123**")
     st.stop()
 
-# ==================== SIDEBAR (SARAN 7: RADIO) ====================
+# ==================== SIDEBAR ====================
 with st.sidebar:
     st.markdown(f"""
     <div style="text-align:center; padding: 15px 0;">
@@ -374,7 +372,7 @@ with st.sidebar:
         "💰 Pembayaran Cicilan", 
         "🖨️ Cetak Slip Kredit",
         "👥 Data Customer", 
-        "🤝 Serah Terima Barang", # MENU BARU
+        "🤝 Serah Terima Barang",
         "📦 Stok Barang",
         "🚨 Overdue & Denda", 
         "🔔 Alert & Reminder", 
@@ -612,7 +610,6 @@ elif pilihan == "🛒 Jual Cash":
         elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
 
-    # Ambil data customer dan produk
     df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat, nik FROM customer ORDER BY nama", conn)
     df_prod = pd.read_sql_query("SELECT id, nama, stok, harga_modal, harga_jual, markup_persen, kategori FROM produk WHERE stok > 0 ORDER BY nama", conn)
 
@@ -648,7 +645,6 @@ elif pilihan == "🛒 Jual Cash":
                 tenor_list = get_tenor_list()
                 tenor = st.selectbox("Tenor (bulan)", tenor_list)
                 bunga_persen = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
-                # Hitung bunga flat proporsional
                 bunga_total_persen = bunga_persen * (tenor / 6.0)
                 pokok_hutang = harga_cash - dp
                 total_hutang = round(pokok_hutang * (1 + bunga_total_persen / 100), -2)
@@ -668,7 +664,6 @@ elif pilihan == "🛒 Jual Cash":
                     elif produk_row['stok'] < 1:
                         st.error("Stok produk habis.")
                     else:
-                        # Simpan kredit
                         tanggal_kredit = datetime.now().strftime("%Y-%m-%d")
                         jatuh_tempo = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                         c.execute("""INSERT INTO kredit
@@ -676,7 +671,6 @@ elif pilihan == "🛒 Jual Cash":
                                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                                   (customer_id, prod_id, harga_cash, dp, pokok_hutang, total_hutang, tenor, cicilan_bulan, total_hutang, jatuh_tempo, "Berjalan", tanggal_kredit))
                         kredit_id = c.lastrowid
-                        # Kurangi stok
                         c.execute("UPDATE produk SET stok = stok - 1 WHERE id = ?", (prod_id,))
                         conn.commit()
                         log_aksi(st.session_state.username, "KREDIT_BARU", f"Kredit ID {kredit_id} untuk customer {customer_id}")
@@ -723,14 +717,12 @@ elif pilihan == "💰 Pembayaran Cicilan":
             kredit_id = options[pilih]
             row_kredit = df_kredit[df_kredit['id'] == kredit_id].iloc[0]
 
-            # Tampilkan informasi
             st.markdown(f"**Customer:** {row_kredit['customer']}")
             st.markdown(f"**Produk:** {row_kredit['produk']}")
             st.markdown(f"**Sisa Hutang:** {format_rp(row_kredit['sisa_hutang'])}")
             st.markdown(f"**Cicilan per bulan:** {format_rp(row_kredit['cicilan_bulan'])}")
             st.markdown(f"**Jatuh Tempo:** {row_kredit['jatuh_tempo']}")
 
-            # Hitung denda jika telat
             jatuh_tempo_dt = datetime.strptime(row_kredit['jatuh_tempo'], "%Y-%m-%d")
             hari_telat = (datetime.now() - jatuh_tempo_dt).days
             denda = hitung_denda(row_kredit['cicilan_bulan'], max(hari_telat, 0))
@@ -749,12 +741,10 @@ elif pilihan == "💰 Pembayaran Cicilan":
                 elif jumlah_bayar > row_kredit['sisa_hutang'] + denda:
                     st.error("Jumlah bayar melebihi sisa hutang + denda.")
                 else:
-                    # Simpan pembayaran
                     c.execute("""INSERT INTO pembayaran (kredit_id, jumlah_bayar, denda, tanggal, keterangan)
                                  VALUES (?,?,?,?,?)""",
                               (kredit_id, jumlah_bayar, denda, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), keterangan))
                     conn.commit()
-                    # Recalculate sisa hutang
                     recalculate_kredit(kredit_id)
                     log_aksi(st.session_state.username, "PEMBAYARAN", f"Kredit ID {kredit_id} bayar {format_rp(jumlah_bayar)}")
                     flash(f"Pembayaran sebesar {format_rp(jumlah_bayar)} berhasil dicatat.")
@@ -790,7 +780,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         pilih_id = st.selectbox("Pilih ID Kredit untuk dicetak", df_kredit_cetak['id'].tolist())
         kredit_data = df_kredit_cetak[df_kredit_cetak['id'] == pilih_id].iloc[0]
 
-        # Opsi jadwal
         opsi_jadwal = st.radio("Tampilkan Jadwal Angsuran", ["Jadwal Asli", "Jadwal Kustom (jika ada)"])
         if opsi_jadwal == "Jadwal Asli":
             df_jadwal = pd.DataFrame(build_jadwal_angsuran(
@@ -803,7 +792,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 kredit_data['cicilan_bulan'], kredit_data['tenor'], kredit_data['tanggal_kredit']
             )
 
-        # Bangun HTML untuk slip
         html_slip = f"""
         <div style="font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 20px; border: 1px solid #ccc; background: white;">
             <h2 style="text-align: center;">GRACE'S STORE</h2>
@@ -837,7 +825,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         """
         for _, row in df_jadwal.iterrows():
             html_slip += f"<tr><td>{row['ke']}</td><td>{row['jatuh_tempo']}</td><td>{format_rp(row['angsuran'])}</td><td>{format_rp(row['sisa'])}</td></tr>"
-        html_slip += """
+        
+        html_slip += f"""
                 </tbody>
             </table>
             <br>
@@ -845,6 +834,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <p style="text-align: center; font-size: 0.8em;">Dokumen ini dicetak pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</p>
         </div>
         """
+        
         st.markdown(html_slip, unsafe_allow_html=True)
         if st.button("🖨️ Cetak Slip"):
             components.html(
@@ -1139,7 +1129,6 @@ elif pilihan == "🚨 Overdue & Denda":
         df_tampil['Denda'] = df_tampil['Denda'].apply(format_rp)
         st.dataframe(df_tampil, use_container_width=True, hide_index=True)
 
-        # Tampilkan yang telat
         df_telat = df_overdue_final[df_overdue_final['Hari_Telat'] > 0]
         if not df_telat.empty:
             st.markdown("---")
@@ -1597,7 +1586,6 @@ elif pilihan == "💾 Backup, Cetak & Impor":
         st.subheader("📤 Ekspor Data ke CSV / ZIP")
         st.info("Ekspor seluruh tabel penting ke dalam file ZIP berisi CSV.")
         if st.button("Siapkan File Ekspor ZIP"):
-            import zipfile
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                 tabel_ekspor = {
