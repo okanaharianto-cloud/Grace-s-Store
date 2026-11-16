@@ -1,4 +1,349 @@
-# ==================== 13. CETAK SLIP KREDIT (FULL HTML OJK) ====================
+import streamlit as st
+import sqlite3
+import pandas as pd
+import datetime
+from datetime import datetime, timedelta
+import hashlib
+import os
+import base64
+import streamlit.components.v1 as components
+
+# ==================== KONFIGURASI HALAMAN ====================
+st.set_page_config(page_title="Grace's Electronic - POS", page_icon="🏪", layout="wide")
+
+ALAMAT_TOKO = "Jl. Sendawar Raya, Barong Tongkok, Kutai Barat, Kalimantan Timur"
+
+# ==================== KONEKSI DATABASE ====================
+def get_db():
+    conn = sqlite3.connect('toko.db', check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+conn = get_db()
+c = conn.cursor()
+
+# Buat folder untuk upload KTP
+if not os.path.exists("uploads"):
+    os.makedirs("uploads")
+
+# ==================== FUNGSI HELPER ====================
+def hash_password(pw):
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def get_current_time():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def format_rp(angka):
+    try:
+        return f"Rp {int(angka):,}".replace(",", ".")
+    except:
+        return "Rp 0"
+
+def flash(pesan, tipe="success"):
+    st.session_state['flash_msg'] = (pesan, tipe)
+
+def log_aksi(username, aksi, detail):
+    try:
+        c.execute("INSERT INTO log_aktivitas (waktu, username, aksi, detail) VALUES (?,?,?,?)",
+                  (get_current_time(), username, aksi, detail))
+        conn.commit()
+    except:
+        pass
+
+def get_pengaturan_float(key, default):
+    try:
+        c.execute("SELECT value FROM pengaturan WHERE key=?", (key,))
+        row = c.fetchone()
+        return float(row['value']) if row else default
+    except:
+        return default
+
+def build_jadwal_angsuran(total_hutang, cicilan, tenor, tanggal_awal_str):
+    try:
+        tanggal_awal = datetime.strptime(tanggal_awal_str, "%Y-%m-%d")
+    except:
+        tanggal_awal = datetime.now()
+    jadwal = []
+    sisa = total_hutang
+    for i in range(1, tenor + 1):
+        bulan_baru = tanggal_awal.month + i
+        tahun_baru = tanggal_awal.year + (bulan_baru - 1) // 12
+        bulan_baru = (bulan_baru - 1) % 12 + 1
+        tgl_jatuh_tempo = tanggal_awal.replace(year=tahun_baru, month=bulan_baru)
+        
+        angsuran = cicilan if i < tenor else sisa
+        sisa -= angsuran
+        jadwal.append({
+            'ke': i,
+            'jatuh_tempo': tgl_jatuh_tempo.strftime("%d-%m-%Y"),
+            'angsuran': angsuran,
+            'sisa': max(0, sisa)
+        })
+    return jadwal
+
+def recalculate_kredit(kredit_id):
+    c.execute("SELECT total_hutang, (SELECT COALESCE(SUM(jumlah_bayar),0) FROM pembayaran WHERE kredit_id=?) as total_bayar FROM kredit WHERE id=?", (kredit_id, kredit_id))
+    row = c.fetchone()
+    if row:
+        sisa = row['total_hutang'] - row['total_bayar']
+        status = "Lunas" if sisa <= 0 else "Berjalan"
+        c.execute("UPDATE kredit SET sisa_hutang=?, status=? WHERE id=?", (sisa, status, kredit_id))
+        conn.commit()
+
+# ==================== INISIALISASI DATABASE ====================
+def init_db():
+    c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS customer (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, telepon TEXT, alamat TEXT, nik TEXT, tanggal_lahir TEXT, status_kawin TEXT, foto_ktp TEXT, foto_kk TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS produk (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, harga INTEGER, stok INTEGER)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS kredit (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, produk_id INTEGER, tanggal_kredit TEXT, harga_cash REAL, dp REAL, pokok_hutang REAL, total_hutang REAL, cicilan_bulan REAL, tenor INTEGER, jatuh_tempo TEXT, status TEXT, sisa_hutang REAL, updated_at TEXT, updated_by TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS pembayaran (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, tanggal TEXT, jumlah_bayar REAL, denda REAL, keterangan TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (key TEXT PRIMARY KEY, value TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AUTOINCREMENT, waktu TEXT, username TEXT, aksi TEXT, detail TEXT)''')
+    
+    c.execute("SELECT COUNT(*) FROM users")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO users (username, password, nama_lengkap, role) VALUES (?,?,?,?)", 
+                  ("admin", hash_password("admin123"), "Administrator", "admin"))
+    
+    c.execute("INSERT OR IGNORE INTO pengaturan (key, value) VALUES ('denda_per_hari_persen', '1.0')")
+    c.execute("INSERT OR IGNORE INTO pengaturan (key, value) VALUES ('bunga_flat_6bln_persen', '40.0')")
+    conn.commit()
+
+init_db()
+
+# ==================== CSS KUSTOM ====================
+st.markdown("""
+<style>
+    .main-header { background: linear-gradient(135deg, #1e3a8a, #3b82f6); padding: 20px; border-radius: 10px; color: white; margin-bottom: 20px; }
+    .main-header h1 { margin: 0; font-size: 24px; }
+    .main-header p { margin: 5px 0 0 0; font-size: 14px; opacity: 0.8; }
+    .section-header h3 { border-bottom: 2px solid #1e3a8a; padding-bottom: 5px; color: #1e3a8a; }
+</style>
+""", unsafe_allow_html=True)
+# ==================== SISTEM LOGIN ====================
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.markdown('<div class="main-header"><h1>🏪 Grace\'s Electronic</h1><p>Sistem Manajemen Toko & Kredit</p></div>', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.markdown("### 🔐 Login Akses")
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            if st.form_submit_button("Masuk", use_container_width=True):
+                c.execute("SELECT * FROM users WHERE username=? AND password=? AND aktif=1", (username, hash_password(password)))
+                user = c.fetchone()
+                if user:
+                    st.session_state.logged_in = True
+                    st.session_state.username = user['username']
+                    st.session_state.role = user['role']
+                    st.session_state.nama_lengkap = user['nama_lengkap']
+                    log_aksi(username, "LOGIN", "Berhasil login")
+                    st.rerun()
+                else:
+                    st.error("❌ Username atau password salah, atau akun nonaktif.")
+    st.stop()
+
+# ==================== NAVIGASI SIDEBAR ====================
+with st.sidebar:
+    st.markdown(f"### 👋 Halo, {st.session_state.nama_lengkap}")
+    st.markdown(f"Role: **{st.session_state.role.upper()}**")
+    st.divider()
+    
+    menu_admin = ["📊 Dashboard", "🛒 Jual Cash", "📤 Kredit Baru", "💳 Pembayaran Angsuran", "👥 Data Customer", "📦 Data Produk", "🖨️ Cetak Slip Kredit", "👤 Manajemen User", "📝 Log Aktivitas", "⚙️ Pengaturan"]
+    menu_kasir = ["📊 Dashboard", "🛒 Jual Cash", "📤 Kredit Baru", "💳 Pembayaran Angsuran", "👥 Data Customer", "📦 Data Produk", "🖨️ Cetak Slip Kredit"]
+    
+    pilihan_menu = menu_admin if st.session_state.role == "admin" else menu_kasir
+    pilihan = st.radio("Navigasi Menu", pilihan_menu)
+    
+    st.divider()
+    if st.button("🚪 Logout", use_container_width=True):
+        log_aksi(st.session_state.username, "LOGOUT", "Keluar dari sistem")
+        st.session_state.logged_in = False
+        st.rerun()
+
+# Tampilkan Flash Message
+if 'flash_msg' in st.session_state:
+    msg, tipe = st.session_state['flash_msg']
+    if tipe == "success": st.success(msg)
+    elif tipe == "error": st.error(msg)
+    elif tipe == "warning": st.warning(msg)
+    del st.session_state['flash_msg']
+
+# ==================== KONTEN MENU ====================
+
+# 1. DASHBOARD
+if pilihan == "📊 Dashboard":
+    st.markdown('<div class="main-header"><h1>📊 Dashboard</h1><p>Ringkasan Aktivitas Toko</p></div>', unsafe_allow_html=True)
+    
+    df_k = pd.read_sql_query("SELECT COUNT(*) as total, SUM(sisa_hutang) as piutang FROM kredit WHERE status='Berjalan'", conn)
+    df_cash = pd.read_sql_query("SELECT COUNT(*) as total, SUM(total_hutang) as pendapatan FROM kredit WHERE status='Lunas'", conn) 
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Kredit Aktif", f"{df_k['total'][0]} Transaksi", f"Piutang: {format_rp(df_k['piutang'][0] or 0)}")
+    col2.metric("Kredit Lunas", f"{df_cash['total'][0]} Transaksi", f"Total: {format_rp(df_cash['pendapatan'][0] or 0)}")
+    
+    st.markdown("### 📅 Jatuh Tempo Terdekat")
+    df_tempo = pd.read_sql_query("SELECT k.id, c.nama, k.jatuh_tempo, k.cicilan_bulan FROM kredit k JOIN customer c ON k.customer_id=c.id WHERE k.status='Berjalan' ORDER BY k.jatuh_tempo ASC LIMIT 5", conn)
+    st.dataframe(df_tempo, use_container_width=True, hide_index=True)
+
+# 2. JUAL CASH
+elif pilihan == "🛒 Jual Cash":
+    st.markdown('<div class="main-header"><h1>🛒 Jual Cash</h1></div>', unsafe_allow_html=True)
+    st.info("Silakan pilih produk dan customer untuk transaksi tunai.")
+    
+    with st.form("form_cash"):
+        df_p = pd.read_sql_query("SELECT id, nama, harga FROM produk WHERE stok > 0", conn)
+        df_cst = pd.read_sql_query("SELECT id, nama FROM customer", conn)
+        if df_p.empty or df_cst.empty:
+            st.warning("Data produk atau customer kosong. Silakan tambah di menu Data Master.")
+        else:
+            p_opts = {f"{r['nama']} - {format_rp(r['harga'])}": r['id'] for _, r in df_p.iterrows()}
+            c_opts = {r['nama']: r['id'] for _, r in df_cst.iterrows()}
+            
+            sel_prod = st.selectbox("Pilih Produk", list(p_opts.keys()))
+            sel_cust = st.selectbox("Pilih Customer", list(c_opts.keys()))
+            jml_bayar = st.number_input("Jumlah Uang Diterima (Rp)", min_value=0)
+            
+            if st.form_submit_button("Proses Pembelian Cash"):
+                # Logika sederhana: Catat sebagai kredit lunas di database
+                prod_id = p_opts[sel_prod]
+                cust_id = c_opts[sel_cust]
+                harga = df_p[df_p['id']==prod_id]['harga'].values[0]
+                
+                tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
+                c.execute("""INSERT INTO kredit 
+                             (customer_id, produk_id, tanggal_kredit, harga_cash, dp, pokok_hutang, total_hutang, cicilan_bulan, tenor, jatuh_tempo, status, sisa_hutang) 
+                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (cust_id, prod_id, tgl_sekarang, harga, harga, 0, harga, 0, 1, tgl_sekarang, "Lunas", 0))
+                c.execute("UPDATE produk SET stok = stok - 1 WHERE id=?", (prod_id,))
+                conn.commit()
+                flash("✅ Transaksi Cash berhasil diproses!", "success")
+                st.rerun()
+
+# 3. KREDIT BARU
+elif pilihan == "📤 Kredit Baru":
+    st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1></div>', unsafe_allow_html=True)
+    
+    with st.form("form_kredit_baru"):
+        df_cst = pd.read_sql_query("SELECT id, nama, nik FROM customer", conn)
+        df_p = pd.read_sql_query("SELECT id, nama, harga FROM produk WHERE stok > 0", conn)
+        
+        if df_cst.empty or df_p.empty:
+            st.warning("⚠️ Anda harus menambahkan Customer dan Produk terlebih dahulu di menu masing-masing.")
+        else:
+            c_opts = {r['nama']: r['id'] for _, r in df_cst.iterrows()}
+            p_opts = {r['nama']: (r['id'], r['harga']) for _, r in df_p.iterrows()}
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                cust_pilih = st.selectbox("Pilih Customer", list(c_opts.keys()))
+                prod_pilih = st.selectbox("Pilih Produk", list(p_opts.keys()))
+                harga_cash = p_opts[prod_pilih][1]
+                st.number_input("Harga Cash", value=float(harga_cash), disabled=True)
+            with col2:
+                dp = st.number_input("DP (Uang Muka)", min_value=0.0, value=float(harga_cash*0.3))
+                tenor = st.number_input("Tenor (Bulan)", min_value=1, value=6)
+                bunga = st.number_input("Bunga Flat (%)", value=40.0) / 100
+                
+            pokok = harga_cash - dp
+            total_hutang = round(pokok * (1 + bunga), -2)
+            cicilan = round(total_hutang / tenor, -2)
+            
+            st.markdown(f"**Pokok Hutang:** {format_rp(pokok)}")
+            st.markdown(f"**Total Hutang (termasuk bunga):** {format_rp(total_hutang)}")
+            st.markdown(f"**Angsuran per Bulan:** {format_rp(cicilan)}")
+            
+            if st.form_submit_button("Simpan Kredit", use_container_width=True):
+                try:
+                    cust_id = c_opts[cust_pilih]
+                    prod_id = p_opts[prod_pilih][0]
+                    tgl_sekarang = datetime.now().strftime("%Y-%m-%d")
+                    jt = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                    
+                    c.execute("""INSERT INTO kredit 
+                                 (customer_id, produk_id, tanggal_kredit, harga_cash, dp, pokok_hutang, total_hutang, cicilan_bulan, tenor, jatuh_tempo, status, sisa_hutang) 
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              (cust_id, prod_id, tgl_sekarang, harga_cash, dp, pokok, total_hutang, cicilan, tenor, jt, "Berjalan", total_hutang))
+                    c.execute("UPDATE produk SET stok = stok - 1 WHERE id=?", (prod_id,))
+                    conn.commit()
+                    flash("✅ Kredit baru berhasil disimpan!", "success")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal: {e}")
+
+# 4. DATA CUSTOMER
+elif pilihan == "👥 Data Customer":
+    st.markdown('<div class="main-header"><h1>👥 Data Customer</h1></div>', unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["Tambah Baru", "Daftar Customer"])
+    
+    with tab1:
+        with st.form("form_cust"):
+            nama = st.text_input("Nama Lengkap")
+            telp = st.text_input("Telepon/WA")
+            alamat = st.text_area("Alamat")
+            nik = st.text_input("NIK")
+            tgl_lahir = st.date_input("Tanggal Lahir", value=datetime(1990,1,1))
+            status_kawin = st.selectbox("Status Kawin", ["Belum Menikah", "Menikah", "Cerai"])
+            
+            if st.form_submit_button("Simpan Customer"):
+                if nama:
+                    c.execute("INSERT INTO customer (nama, telepon, alamat, nik, tanggal_lahir, status_kawin) VALUES (?,?,?,?,?,?)",
+                              (nama, telp, alamat, nik, tgl_lahir.strftime("%Y-%m-%d"), status_kawin))
+                    conn.commit()
+                    flash("✅ Customer berhasil ditambahkan!", "success")
+                    st.rerun()
+    with tab2:
+        df_c = pd.read_sql_query("SELECT id, nama, telepon, alamat FROM customer", conn)
+        st.dataframe(df_c, use_container_width=True, hide_index=True)
+
+# 5. DATA PRODUK
+elif pilihan == "📦 Data Produk":
+    st.markdown('<div class="main-header"><h1>📦 Data Produk</h1></div>', unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["Tambah Baru", "Daftar Produk"])
+    with tab1:
+        with st.form("form_prod"):
+            nama_p = st.text_input("Nama Produk")
+            harga_p = st.number_input("Harga", min_value=0)
+            stok_p = st.number_input("Stok", min_value=0)
+            if st.form_submit_button("Simpan Produk"):
+                if nama_p:
+                    c.execute("INSERT INTO produk (nama, harga, stok) VALUES (?,?,?)", (nama_p, harga_p, stok_p))
+                    conn.commit()
+                    flash("✅ Produk ditambahkan!", "success")
+                    st.rerun()
+    with tab2:
+        df_p = pd.read_sql_query("SELECT id, nama, harga, stok FROM produk", conn)
+        st.dataframe(df_p, use_container_width=True, hide_index=True)
+        # 6. PEMBAYARAN ANGSURAN
+elif pilihan == "💳 Pembayaran Angsuran":
+    st.markdown('<div class="main-header"><h1>💳 Pembayaran Angsuran</h1></div>', unsafe_allow_html=True)
+    
+    df_k = pd.read_sql_query("SELECT k.id, c.nama, k.sisa_hutang FROM kredit k JOIN customer c ON k.customer_id=c.id WHERE k.status='Berjalan'", conn)
+    if df_k.empty:
+        st.info("Tidak ada kredit berjalan.")
+    else:
+        k_opts = {f"#{r['id']} - {r['nama']} (Sisa: {format_rp(r['sisa_hutang'])})": r['id'] for _, r in df_k.iterrows()}
+        pilih_k = st.selectbox("Pilih Kredit", list(k_opts.keys()))
+        k_id = k_opts[pilih_k]
+        
+        with st.form("form_bayar"):
+            jml = st.number_input("Jumlah Bayar", min_value=0.0)
+            ket = st.text_input("Keterangan")
+            if st.form_submit_button("Proses Pembayaran"):
+                try:
+                    c.execute("INSERT INTO pembayaran (kredit_id, tanggal, jumlah_bayar, keterangan) VALUES (?,?,?,?)",
+                              (k_id, get_current_time(), jml, ket))
+                    recalculate_kredit(k_id)
+                    conn.commit()
+                    flash("✅ Pembayaran berhasil dicatat!", "success")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Gagal: {e}")
+
+# 7. CETAK SLIP KREDIT (FULL HTML OJK)
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional sesuai standar OJK</p></div>', unsafe_allow_html=True)
 
@@ -66,7 +411,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         tenor_asli = int(m_tenor)
         rate_bulan = m_bunga_bln / 100
         
-        # Secara default, tampilkan perbandingan Opsi A dan B
         tampilkan_banding = st.toggle("Tampilkan Perbandingan 2 Tenor (Opsi A & B)", value=True)
         
         if tampilkan_banding:
@@ -473,8 +817,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             "text/html",
             use_container_width=True
         )
-
-# ==================== 14. MANAJEMEN USER ====================
+        # 8. MANAJEMEN USER (Khusus Admin)
 elif pilihan == "👤 Manajemen User" and st.session_state.role == "admin":
     st.markdown('<div class="main-header"><h1>👤 Manajemen User</h1></div>', unsafe_allow_html=True)
     
@@ -512,6 +855,7 @@ elif pilihan == "👤 Manajemen User" and st.session_state.role == "admin":
         st.markdown("---")
         st.markdown("### ✏️ Edit / Nonaktifkan User")
         opsi_user = {f"{r['username']} - {r['nama_lengkap']} ({r['role']})": r['id'] for _, r in df_users.iterrows()}
+        
         if opsi_user:
             pilih_user = st.selectbox("Pilih User", list(opsi_user.keys()))
             uid = opsi_user[pilih_user]
@@ -521,10 +865,10 @@ elif pilihan == "👤 Manajemen User" and st.session_state.role == "admin":
             with st.form("form_edit_user"):
                 colA, colB = st.columns(2)
                 with colA:
-                    edit_nama = st.text_input("Nama Lengkap", value=row_u[1])
-                    edit_role = st.selectbox("Role", ["admin", "kasir"], index=0 if row_u[2] == "admin" else 1)
+                    edit_nama = st.text_input("Nama Lengkap", value=row_u['nama_lengkap'])
+                    edit_role = st.selectbox("Role", ["admin", "kasir"], index=0 if row_u['role'] == "admin" else 1)
                 with colB:
-                    edit_aktif = st.selectbox("Status", [1, 0], index=0 if row_u[3] == 1 else 1, format_func=lambda x: "Aktif" if x == 1 else "Nonaktif")
+                    edit_aktif = st.selectbox("Status", [1, 0], index=0 if row_u['aktif'] == 1 else 1, format_func=lambda x: "Aktif" if x == 1 else "Nonaktif")
                     edit_pw = st.text_input("Password Baru (biarkan kosong jika tidak diubah)", type="password")
                     
                 if st.form_submit_button("💾 Update User"):
@@ -539,8 +883,36 @@ elif pilihan == "👤 Manajemen User" and st.session_state.role == "admin":
                     except Exception as e:
                         st.error(f"❌ Gagal: {e}")
 
-# ==================== 15. LOG AKTIVITAS (Jika dipanggil dari sidebar utama) ====================
+# 9. LOG AKTIVITAS (Khusus Admin)
 elif pilihan == "📝 Log Aktivitas" and st.session_state.role == "admin":
     st.markdown('<div class="main-header"><h1>📝 Log Aktivitas Sistem</h1></div>', unsafe_allow_html=True)
+    st.info("Menampilkan 200 aktivitas terakhir di dalam sistem.")
+    
     df_log_main = pd.read_sql_query("SELECT waktu, username, aksi, detail FROM log_aktivitas ORDER BY id DESC LIMIT 200", conn)
     st.dataframe(df_log_main, use_container_width=True, hide_index=True)
+
+# 10. PENGATURAN (Khusus Admin)
+elif pilihan == "⚙️ Pengaturan" and st.session_state.role == "admin":
+    st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Aplikasi</h1></div>', unsafe_allow_html=True)
+    
+    st.markdown("### ⚙️ Pengaturan Bunga & Denda Default")
+    with st.form("form_pengaturan"):
+        bunga_default = st.number_input("Bunga Flat Default (6 Bulan) %", value=get_pengaturan_float("bunga_flat_6bln_persen", 40.0), step=1.0)
+        denda_default = st.number_input("Denda Keterlambatan / Hari (%)", value=get_pengaturan_float("denda_per_hari_persen", 1.0), step=0.1)
+        
+        if st.form_submit_button("💾 Simpan Pengaturan"):
+            try:
+                c.execute("UPDATE pengaturan SET value=? WHERE key=?", (str(bunga_default), "bunga_flat_6bln_persen"))
+                c.execute("UPDATE pengaturan SET value=? WHERE key=?", (str(denda_default), "denda_per_hari_persen"))
+                conn.commit()
+                flash("✅ Pengaturan berhasil disimpan!", "success")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Gagal: {e}")
+
+    st.markdown("---")
+    st.markdown("### ℹ️ Informasi Toko")
+    st.write(f"**Nama Toko:** Grace's Electronic")
+    st.write(f"**Alamat:** {ALAMAT_TOKO}")
+    st.write("**Aplikasi Versi:** 1.0.0 (Standard OJK Edition)")
+    
