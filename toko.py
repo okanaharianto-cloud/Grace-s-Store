@@ -706,7 +706,7 @@ elif pilihan == "💰 Pembayaran Cicilan":
         st.dataframe(df_bayar, use_container_width=True, hide_index=True)
 
 elif pilihan == "🖨️ Cetak Slip Kredit":
-    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian</h1><p>Desain Invoice Modern & Surat Perjanjian Persis PDF</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian</h1><p>Desain Persis PDF Resmi</p></div>', unsafe_allow_html=True)
 
     df_kredit_cetak = pd.read_sql_query("""
         SELECT k.id, c.nama as customer_nama, c.telepon, c.alamat, c.nik, c.tanggal_lahir,
@@ -728,13 +728,11 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         st.markdown("### ✏️ Kustomisasi Sebelum Cetak")
         col_ed1, col_ed2 = st.columns(2)
         with col_ed1:
-            # Default menggunakan ID, tapi bisa diubah manual
             no_invoice = st.text_input("Nomor Invoice (Bisa Diedit)", value=f"INV-{kredit_data['id']}")
         with col_ed2:
-            # Menampilkan NIK agar bisa dipastikan sesuai KTP
             nik_tampil = st.text_input("NIK (Sesuai KTP)", value=kredit_data['nik'] or "")
             
-        st.info(f"Pastikan data **{kredit_data['customer_nama']}** sudah benar. Jika NIK kosong, silakan isi di atas atau edit di menu Data Customer.")
+        st.info(f"Pastikan data **{kredit_data['customer_nama']}** sudah benar. Jika NIK kosong, silakan isi di atas.")
 
         df_jadwal = pd.DataFrame(build_jadwal_angsuran(
             kredit_data['total_hutang'], kredit_data['cicilan_bulan'],
@@ -764,13 +762,13 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         for _, row in df_jadwal.iterrows():
             jadwal_rows += f"""
             <tr>
-                <td class="c">{row['ke']}</td>
-                <td>{row['jatuh_tempo']}</td>
-                <td class="r">{format_rp(row['angsuran'])}</td>
-                <td class="c"><span class="status-badge">BELUM</span></td>
+                <td style="text-align:center; border: 1px solid #000; padding: 5px;">{row['ke']}</td>
+                <td style="text-align:center; border: 1px solid #000; padding: 5px;">{row['jatuh_tempo']}</td>
+                <td style="text-align:right; border: 1px solid #000; padding: 5px;">{format_rp(row['angsuran'])}</td>
+                <td style="text-align:center; border: 1px solid #000; padding: 5px;">BELUM</td>
             </tr>"""
 
-        # Build HTML
+        # Build HTML (Persis PDF)
         html_slip = f"""
         <!DOCTYPE html>
         <html lang="id">
@@ -779,339 +777,238 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         <title>Invoice {no_invoice} - GRACE'S ELECTRONIC</title>
         <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
         <style>
-            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-            body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 11px; }}
-            .page {{ max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,0.15); margin-bottom: 20px; }}
+            body {{ 
+                font-family: Arial, Helvetica, sans-serif; 
+                font-size: 11px; 
+                color: #000; 
+                margin: 0; 
+                padding: 20px; 
+                background: #f4f4f4;
+            }}
+            .page {{ 
+                background: white; 
+                max-width: 800px; 
+                margin: 0 auto; 
+                padding: 40px; 
+                box-shadow: 0 0 10px rgba(0,0,0,0.1); 
+                margin-bottom: 20px;
+            }}
             
-            /* Tombol Print */
-            .btn-print-wrap {{ position: sticky; top: 0; z-index: 9999; background: #e2e8f0; padding: 10px 0; text-align: center; }}
-            .btn-print {{ background-color: #1e3a8a; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; max-width: 820px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-            .btn-print:hover {{ background-color: #2563eb; }}
-
-            /* HEADER */
-            .hdr {{ background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 70%, #1e40af 100%); color: #fff; padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }}
-            .brand {{ position: relative; z-index:1; }}
-            .brand h1 {{ font-size: 19px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
-            .brand .tag {{ font-size: 9.5px; color: #94a3b8; letter-spacing: 0.4px; margin-top: 1px; }}
-            .brand .addr {{ font-size: 9px; color: #cbd5e1; margin-top: 4px; line-height: 1.4; max-width: 400px; }}
-            .title-box {{ text-align: right; position: relative; z-index: 1; }}
-            .badge-inv {{ display: inline-block; background: rgba(245,158,11,0.22); color: #fbbf24; padding: 3px 10px; border-radius: 12px; font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid rgba(245,158,11,0.4); }}
-            .inv-no {{ font-size: 14px; font-weight: 800; margin-top: 5px; }}
-            .inv-date {{ font-size: 9px; color: #94a3b8; margin-top: 2px; }}
-
-            /* META STRIP */
-            .meta {{ display: flex; gap: 14px; justify-content: space-between; padding: 6px 22px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 9.5px; color: #475569; }}
-            .meta b {{ color: #0f172a; }}
-
-            /* BODY */
-            .body {{ padding: 15px 22px 20px; }}
-
-            /* TOP 2-COLUMN */
-            .top-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }}
-            .sec {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }}
-            .sec-title {{ font-size: 9.5px; font-weight: 800; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; margin-bottom: 5px; border-bottom: 1.5px solid #f1f5f9; display: flex; align-items: center; gap: 5px; }}
-            .kv {{ display: grid; grid-template-columns: 60px 1fr; gap: 3px 6px; font-size: 10px; }}
-            .kv .k {{ color: #64748b; }}
-            .kv .v {{ color: #0f172a; font-weight: 600; }}
-
-            /* SUMMARY CARDS */
-            .summary-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }}
-            .sum-card {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; text-align: center; }}
-            .sum-card.green {{ background: #ecfdf5; border-color: #a7f3d0; }}
-            .sum-card.amber {{ background: #fffbeb; border-color: #fde68a; }}
-            .sum-card .lbl {{ font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }}
-            .sum-card .val {{ font-size: 14px; font-weight: 800; margin-top: 2px; }}
-            .sum-card.green .val {{ color: #065f46; }}
-            .sum-card.amber .val {{ color: #92400e; }}
-
-            /* SCHEDULE TABLE */
-            .sched {{ border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }}
-            .sched-h {{ padding: 6px 10px; font-size: 10px; font-weight: 800; color: #fff; background: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; }}
-            .sched table {{ width: 100%; border-collapse: collapse; font-size: 10px; }}
-            .sched th {{ background: #f8fafc; color: #475569; font-size: 9px; padding: 6px 8px; text-align: left; border-bottom: 2px solid #cbd5e1; border-right: 1px solid #e2e8f0; }}
-            .sched th:last-child {{ border-right: none; }}
-            .sched td {{ padding: 6px 8px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; }}
-            .sched td:last-child {{ border-right: none; }}
-            .sched .r {{ text-align: right; }}
-            .sched .c {{ text-align: center; }}
-            .sched .total-row td {{ background: #f1f5f9; font-weight: bold; color: #1e3a8a; border-top: 2px solid #cbd5e1; }}
-            .status-badge {{ display: inline-block; padding: 1px 6px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 8px; font-weight: 700; }}
-
-            /* CATATAN & WARNING */
-            .catatan {{ font-size: 9px; color: #475569; margin-bottom: 12px; line-height: 1.4; }}
-            .transfer-box {{ border: 1px dashed #3b82f6; background: #eff6ff; padding: 10px; text-align: center; border-radius: 8px; margin-bottom: 12px; font-size: 10px; color: #1e3a8a; }}
-            .warning-box {{ background: #fff1f2; border: 1px solid #f43f5e; padding: 10px; border-radius: 8px; margin-bottom: 15px; }}
-            .warning-title {{ color: #be123c; font-weight: bold; font-size: 10px; margin-bottom: 4px; text-transform: uppercase; }}
-            .warning-text {{ font-size: 9px; color: #000; line-height: 1.4; text-align: justify; }}
-
-            /* PERJANJIAN RAPI */
-            .agreement-container {{ background: #ffffff; border: 2px solid #000000; padding: 25px; margin-top: 15px; margin-bottom: 15px; font-family: 'Times New Roman', Times, serif; font-size: 11px; color: #000000; line-height: 1.6; }}
-            .agreement-title {{ text-align: center; font-weight: bold; font-size: 12px; text-decoration: underline; margin-bottom: 4px; }}
-            .agreement-number {{ text-align: center; font-weight: bold; margin-bottom: 15px; }}
-            .agreement-articles b {{ display: block; margin-top: 15px; margin-bottom: 5px; font-size: 11px; text-align: center; }}
-            .agreement-articles p {{ margin-bottom: 6px; text-align: justify; text-indent: 20px; }}
-            .agreement-articles ol {{ margin-left: 20px; margin-bottom: 10px; text-align: justify; }}
-            .agreement-articles ol li {{ margin-bottom: 5px; padding-left: 5px; }}
-
-            /* SIGNATURE AREA */
-            .signature-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px; }}
-            .sig-box {{ text-align: center; position: relative; }}
-            .sig-title {{ font-size: 10px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }}
+            /* Header */
+            .header {{ text-align: center; margin-bottom: 20px; }}
+            .header h1 {{ margin: 0; font-size: 20px; letter-spacing: 1px; }}
+            .header p {{ margin: 3px 0; font-size: 11px; }}
             
-            .sig-box-kreditur {{ border: 1px solid #93c5fd; background: #eff6ff; border-radius: 8px; padding: 15px; position: relative; margin-bottom: 10px; }}
-            .cert-badge {{ display: flex; align-items: center; justify-content: center; gap: 5px; color: #0284c7; font-size: 10px; font-weight: bold; margin-bottom: 5px; }}
-            .cert-badge svg {{ width: 14px; height: 14px; fill: currentColor; }}
-            .sig-name-bold {{ font-weight: bold; font-size: 11px; margin-bottom: 3px; }}
-            .sig-sub {{ font-size: 9px; color: #64748b; line-height: 1.3; margin-bottom: 10px; }}
+            .status {{ font-weight: bold; margin-bottom: 15px; font-size: 11px; }}
             
-            .sig-box-debitur {{ border: 1px dashed #94a3b8; background: #f8fafc; border-radius: 8px; padding: 15px; position: relative; margin-bottom: 10px; }}
-            .emeterai-wrap {{ display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60px; margin-bottom: 5px; }}
-            .emeterai {{ width: 60px; height: 35px; background: linear-gradient(135deg, #a855f7, #6b21a8); border-radius: 4px; border: 2px solid #d8b4fe; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }}
-            .emeterai-logo {{ font-size: 10px; line-height: 1; }}
-            .emeterai-text {{ font-size: 5px; letter-spacing: 0.5px; font-weight: bold; }}
-            .emeterai-val {{ font-size: 10px; font-weight: 900; }}
+            .section-title {{ font-weight: bold; margin-top: 20px; margin-bottom: 10px; font-size: 11px; text-transform: uppercase; }}
             
-            .sig-name-underline {{ font-weight: bold; font-size: 11px; text-decoration: underline; margin-top: 10px; }}
-            .sig-nik {{ font-size: 9px; color: #334155; margin-top: 3px; }}
-
+            /* Table Data Customer */
+            .table-customer {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }}
+            .table-customer td {{ padding: 2px 0; vertical-align: top; }}
+            
+            /* DP Box */
+            .dp-box {{ border: 1px solid #000; padding: 10px; text-align: center; font-weight: bold; margin-bottom: 20px; font-size: 14px; }}
+            
+            /* Table Jadwal */
+            .table-jadwal {{ width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 11px; }}
+            .table-jadwal th {{ background: #e0e0e0; border: 1px solid #000; padding: 6px; text-align: center; }}
+            .table-jadwal .total-row td {{ font-weight: bold; background: #f0f0f0; }}
+            
+            .catatan {{ font-size: 10px; margin-bottom: 20px; line-height: 1.4; }}
+            
+            .transfer-box {{ margin-bottom: 20px; font-size: 11px; }}
+            
+            .warning-box {{ color: #cc0000; font-weight: bold; margin-bottom: 20px; font-size: 11px; line-height: 1.4; text-align: justify; }}
+            
+            .footer {{ text-align: center; font-size: 10px; margin-top: 30px; border-top: 1px solid #000; padding-top: 10px; }}
+            
+            /* --- HALAMAN 2 --- */
+            .page-2 {{
+                font-family: 'Times New Roman', Times, serif;
+                font-size: 12px;
+                line-height: 1.6;
+            }}
+            .agreement-title {{ text-align: center; font-weight: bold; font-size: 14px; margin-bottom: 20px; text-decoration: underline; }}
+            .agreement-content p {{ text-align: justify; margin-bottom: 10px; text-indent: 30px; }}
+            .agreement-content .no-indent {{ text-indent: 0; }}
+            .pasal-title {{ text-align: center; font-weight: bold; margin-top: 20px; margin-bottom: 10px; }}
+            .pasal-list {{ padding-left: 40px; text-align: justify; }}
+            .pasal-list li {{ margin-bottom: 5px; }}
+            
+            /* Tanda Tangan */
+            .ttd-table {{ width: 100%; margin-top: 50px; text-align: center; border-collapse: collapse; }}
+            .ttd-table td {{ width: 50%; vertical-align: top; }}
+            .ttd-title {{ font-weight: bold; margin-bottom: 10px; }}
+            .ttd-box {{ border: 1px solid #000; padding: 10px; margin: 0 auto; width: 80%; min-height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; }}
+            .ttd-name {{ font-weight: bold; text-decoration: underline; margin-top: 10px; }}
+            
             @media print {{
-                @page {{ size: A4 portrait; margin: 10mm; }}
-                body {{ background: #fff; padding: 0; margin: 0; font-size: 10px; }}
-                .btn-print-wrap {{ display: none !important; }}
-                .page {{ box-shadow: none; border-radius: 0; max-width: 100%; width: 100%; border: none; margin-bottom: 0; }}
-                .page:nth-child(2) {{ page-break-before: always; }}
+                @page {{ size: A4 portrait; margin: 15mm; }}
+                body {{ background: white; padding: 0; }}
+                .page {{ box-shadow: none; padding: 0; margin: 0; max-width: 100%; }}
+                .page-break {{ page-break-before: always; }}
                 * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
             }}
         </style>
         </head>
         <body>
-        
-        <div class="btn-print-wrap">
-            <button class="btn-print" onclick="window.print()">🖨️ Cetak Sekarang (Print / Simpan PDF)</button>
-        </div>
-        
+
         <!-- ================= HALAMAN 1 ================= -->
         <div class="page">
-            <header class="hdr">
-                <div class="brand">
-                    <h1>Grace's Electronic</h1>
-                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
-                    <div class="addr">Sekolaq Darat RT 007 Kampung Sekolaq Darat Kec. Sekolaq Darat, Kab. Kutai Barat, Prov. Kaltim • HP/WA: 0822-9954-8411</div>
-                </div>
-                <div class="title-box">
-                    <div class="badge-inv">Invoice Kredit</div>
-                    <div class="inv-no">{no_invoice}</div>
-                    <div class="inv-date">{tgl_kredit_indo}</div>
-                </div>
-            </header>
-
-            <div class="meta">
-                <div>Status: <b style="color:#059669;">● {kredit_data['status'].upper()}</b></div>
-                <div>Metode: <b>Tunai / Transfer</b></div>
+            <div class="header">
+                <h1>GRACE'S ELECTRONIC</h1>
+                <p>Cash & Credit · Authorized Retailer</p>
+                <p>Sekolah Darat RT 007 RW 000, Kel. Sekolah Darat, Kec. Sekolah Darat, Kab. Kutai Barat, Prov. Kalimantan Timur</p>
+                <p>HP/WA: 0822-9954-8411</p>
             </div>
 
-            <div class="body">
-                <div class="top-grid">
-                    <div class="sec">
-                        <div class="sec-title"><span class="ic">👤</span> DATA CUSTOMER</div>
-                        <div class="kv">
-                            <div class="k">Nama</div><div class="v">{kredit_data['customer_nama']}</div>
-                            <div class="k">Telepon</div><div class="v">{kredit_data['telepon'] or '-'}</div>
-                            <div class="k">NIK</div><div class="v">{nik_tampil or '-'}</div>
-                            <div class="k">Alamat</div><div class="v">{kredit_data['alamat'] or '-'}</div>
-                        </div>
-                    </div>
-                    <div class="sec">
-                        <div class="sec-title"><span class="ic">📱</span> DETAIL PRODUK</div>
-                        <div class="kv">
-                            <div class="k">Nama</div><div class="v">{kredit_data['produk_nama']}</div>
-                            <div class="k">SKU</div><div class="v">GRC-{kredit_data['id']:02d}</div>
-                            <div class="k">Garansi</div><div class="v">3 Bulan</div>
-                        </div>
-                    </div>
-                </div>
+            <div class="status">Status: ● {kredit_data['status'].upper()}</div>
 
-                <div class="summary-grid">
-                    <div class="sum-card green">
-                        <div class="lbl">DP DIBAYAR</div>
-                        <div class="val">{format_rp(kredit_data['dp'])}</div>
-                    </div>
-                    <div class="sum-card amber">
-                        <div class="lbl">ANGSURAN / BULAN</div>
-                        <div class="val">{format_rp(kredit_data['cicilan_bulan'])}</div>
-                    </div>
-                </div>
+            <div class="section-title">DATA CUSTOMER</div>
+            <table class="table-customer">
+                <tr><td style="width: 100px;">Nama</td><td>: {kredit_data['customer_nama']}</td></tr>
+                <tr><td>Telepon</td><td>: {kredit_data['telepon'] or '-'}</td></tr>
+                <tr><td>NIK</td><td>: {nik_tampil or '-'}</td></tr>
+                <tr><td>Alamat</td><td>: {kredit_data['alamat'] or '-'}</td></tr>
+            </table>
 
-                <div class="sched">
-                    <div class="sched-h">Jadwal Angsuran — {kredit_data['tenor']} Bulan</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th class="c" style="width:30px;">KE</th>
-                                <th>JATUH TEMPO</th>
-                                <th class="r">NOMINAL</th>
-                                <th class="c">STATUS</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {jadwal_rows}
-                            <tr class="total-row">
-                                <td colspan="2" class="c">TOTAL ANGSURAN</td>
-                                <td class="r">{format_rp(kredit_data['total_hutang'])}</td>
-                                <td class="c">—</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div class="catatan">
-                    *Catatan: Terdapat Biaya Administrasi/Materai sebesar {format_rp(biaya_materai)} (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir (ke-{kredit_data['tenor']}). Total yang disetor pada bulan ke-{kredit_data['tenor']} adalah {format_rp(total_bulan_terakhir)}.
-                </div>
-                
-                <div class="transfer-box">
-                    <div style="font-weight: bold; margin-bottom: 3px;">PEMBAYARAN TRANSFER RESMI</div>
-                    <div style="font-size: 14px; font-weight: bold; letter-spacing: 1px;">Bank Mandiri: 148-00-2889246-4</div>
-                    <div style="font-weight: 600;">a.n. CV GRACE HAVEN TRANSPORT</div>
-                </div>
-
-                <div class="warning-box">
-                    <div class="warning-title">PENTING - KONSEKUENSI MANGKIR</div>
-                    <div class="warning-text">Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking. Hal ini mengakibatkan Debitur masuk dalam daftar hitam (blacklist) yang akan menyulitkan Debitur untuk mengajukan pinjaman/kredit di lembaga keuangan manapun di kemudian hari.</div>
-                </div>
+            <div class="dp-box">
+                DP DIBAYAR<br>
+                {format_rp(kredit_data['dp'])}
             </div>
 
-            <footer class="footer" style="padding: 8px 22px 12px; text-align: center; font-size: 8.5px; color: #9ca3af; line-height: 1.6; border-top: 1px solid #e5e7eb;">
-                <div style="font-family: Georgia, serif; font-size: 9.5px; color: #1a2b47; font-weight: 700; letter-spacing: 0.8px;">GRACE'S ELECTRONIC</div>
-                <div>Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan untuk pembayaran berikutnya.</div>
-            </footer>
+            <div class="section-title">Jadwal Angsuran — {kredit_data['tenor']} Bulan</div>
+            <table class="table-jadwal">
+                <thead>
+                    <tr>
+                        <th style="width: 10%;">KE</th>
+                        <th style="width: 30%;">JATUH TEMPO</th>
+                        <th style="width: 30%;">NOMINAL</th>
+                        <th style="width: 30%;">STATUS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {jadwal_rows}
+                    <tr class="total-row">
+                        <td colspan="2" style="text-align:center; border: 1px solid #000; padding: 5px;">TOTAL ANGSURAN</td>
+                        <td style="text-align:right; border: 1px solid #000; padding: 5px;">{format_rp(kredit_data['total_hutang'])}</td>
+                        <td style="text-align:center; border: 1px solid #000; padding: 5px;">—</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="catatan">
+                *Catatan: Terdapat Biaya Administrasi/Materai sebesar {format_rp(biaya_materai)} (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir (ke-{kredit_data['tenor']}). Total yang disetor pada bulan ke-{kredit_data['tenor']} adalah {format_rp(total_bulan_terakhir)}.
+            </div>
+
+            <div class="section-title">PEMBAYARAN TRANSFER RESMI</div>
+            <div class="transfer-box">
+                Bank Mandiri: <b>148-00-2889246-4</b><br>
+                a.n. CV GRACE HAVEN TRANSPORT
+            </div>
+
+            <div class="section-title">PENTING - KONSEKUENSI MANGKIR</div>
+            <div class="warning-box">
+                Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking. Hal ini mengakibatkan Debitur masuk dalam daftar hitam (blacklist) yang akan menyulitkan Debitur untuk mengajukan pinjaman/kredit di lembaga keuangan manapun di kemudian hari.
+            </div>
+
+            <div class="footer">
+                <b>GRACE'S ELECTRONIC</b><br>
+                Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan sebagai bukti pembayaran yang sah.
+            </div>
         </div>
         
         <!-- ================= HALAMAN 2 ================= -->
-        <div class="page" style="page-break-before: always;">
-            <header class="hdr">
-                <div class="brand">
-                    <h1>Grace's Electronic</h1>
-                    <div class="tag">Cash &amp; Credit · Authorized Retailer</div>
-                    <div class="addr">Sekolaq Darat RT 007 Kampung Sekolaq Darat Kec. Sekolaq Darat, Kab. Kutai Barat, Prov. Kaltim • HP/WA: 0822-9954-8411</div>
-                </div>
-                <div class="title-box">
-                    <div class="badge-inv">Surat Perjanjian Kredit</div>
-                    <div class="inv-no">{no_invoice}</div>
-                    <div class="inv-date">{tgl_kredit_indo}</div>
-                </div>
-            </header>
-            
-            <div class="body">
-                <div class="agreement-container">
-                    <div class="agreement-title">SURAT PERJANJIAN KREDIT BARANG & SURAT KUASA PEMBEBANAN</div>
-                    <div class="agreement-number">Nomor: {no_invoice}/PERJ/2026</div>
-                    
-                    <p>Pada hari ini, <b>{tgl_kredit_indo}</b>, yang bertanda tangan di bawah ini:</p>
-                    
-                    <table style="width: 100%; margin-bottom: 15px; font-size: 11px;">
-                        <tr>
-                            <td style="width: 160px; vertical-align: top;"><b>PIHAK PERTAMA (Kreditur)</b></td>
-                            <td style="vertical-align: top; text-align: justify;">: CV. GRACE HAVEN TRANSPORT (Grace's Electronic), berkedudukan di Sekolaq Darat RT 007 RW 000, Kelurahan/Desa Sekolaq Darat, Kecamatan Sekolaq Darat, Kabupaten Kutai Barat, Provinsi Kalimantan Timur. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh ADI HARIANTO, S.E. selaku Direktur.</td>
-                        </tr>
-                        <tr><td colspan="2" style="height: 5px;"></td></tr>
-                        <tr>
-                            <td style="vertical-align: top;"><b>PIHAK KEDUA (Debitur)</b></td>
-                            <td style="vertical-align: top; text-align: justify;">: {kredit_data['customer_nama'].upper()}, lahir di {kredit_data['alamat'].split(',')[0] if kredit_data['alamat'] else '-'} tanggal {tgl_lahir_indo}, Warga Negara Indonesia, Pekerjaan Wiraswasta, bertempat tinggal di {kredit_data['alamat'] or '-'}, Telp/WA: {kredit_data['telepon'] or '-'}. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: {nik_tampil or '-'}.</td>
-                        </tr>
-                    </table>
-                    
-                    <p>Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan sebagai berikut:</p>
-                    
-                    <div class="agreement-articles">
-                        <b>PASAL 1<br>OBJEK PERJANJIAN</b>
-                        <p>Pihak Pertama setuju untuk membiayai pembelian barang berupa <b>{kredit_data['produk_nama']}</b> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
-                        
-                        <b>PASAL 2<br>KETENTUAN PEMBAYARAN</b>
-                        <ol>
-                            <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar {format_rp(kredit_data['dp'])}.</li>
-                            <li>Total kewajiban angsuran yang harus dibayar oleh Pihak Kedua adalah sebesar {format_rp(kredit_data['total_hutang'])}.</li>
-                            <li>Jangka waktu pembiayaan adalah {kredit_data['tenor']} ({kredit_data['tenor']}) bulan, dengan angsuran bulanan sebesar {format_rp(kredit_data['cicilan_bulan'])}.</li>
-                            <li>Angsuran pertama wajib dibayarkan pada tanggal {jt_pertama_indo} dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan angsuran terakhir tanggal {tgl_terakhir}.</li>
-                            <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT.</li>
-                            <li>Pihak Kedua dikenakan Biaya Administrasi berupa bea materai sebesar {format_rp(biaya_materai)} yang posisinya BERADA DI LUAR nominal angsuran. Biaya tersebut akan ditagihkan dan dibayarkan bersamaan dengan setoran angsuran terakhir (angsuran ke-{kredit_data['tenor']}). Dengan demikian, total pembayaran pada bulan ke-{kredit_data['tenor']} adalah sebesar {format_rp(total_bulan_terakhir)} ({format_rp(cicilan)} angsuran + {format_rp(biaya_materai)} materai).</li>
-                        </ol>
-                        
-                        <b>PASAL 3<br>DENDA DAN WANPRESTASI</b>
-                        <ol>
-                            <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar {denda_persen}% (nol koma empat persen) per hari dari jumlah angsuran yang tertunggak, dengan total denda maksimal 100% dari pokok pembiayaan.</li>
-                            <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
-                            <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking, yang mengakibatkan Debitur masuk dalam daftar hitam (blacklist) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
-                        </ol>
-                        
-                        <b>PASAL 4<br>PENYELESAIAN SENGKETA DAN DOMISILI</b>
-                        <ol>
-                            <li>Segala perselisihan yang timbul dari perjanjian ini akan diselesaikan secara musyawarah mufakat oleh Para Pihak.</li>
-                            <li>Apabila musyawarah tidak mencapai kesepakatan, Para Pihak sepakat untuk menyelesaikannya melalui Lembaga Alternatif Penyelesaian Sengketa Sektor Jasa Keuangan (LAPS SJK) atau Pengadilan Negeri Kutai Barat.</li>
-                            <li>Kreditur dilarang melakukan penarikan objek pembiayaan secara paksa tanpa prosedur hukum yang sah sesuai dengan POJK Nomor 22 Tahun 2023 dan Putusan Mahkamah Konstitusi Nomor 18/PUU-XVII/2019.</li>
-                            <li>Para pihak memilih domisili hukum yang umum dan tetap di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
-                        </ol>
-                        
-                        <b>PASAL 5<br>KETENTUAN PENUTUP</b>
-                        <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
-                    </div>
-                </div>
+        <div class="page page-2 page-break">
+            <div class="agreement-content">
+                <p class="no-indent">Pada hari ini, <b>{tgl_kredit_indo}</b>, yang bertanda tangan di bawah ini:</p>
                 
-                <!-- SIGNATURE AREA -->
-                <div class="signature-grid">
-                    <!-- Pihak Pertama (Kreditur) -->
-                    <div class="sig-box">
-                        <div class="sig-title">PIHAK PERTAMA (KREDITUR)</div>
-                        
-                        <div class="sig-box-kreditur">
-                            <div class="cert-badge">
-                                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                                TERSERTIFIKASI
+                <table style="width: 100%; margin-bottom: 10px;">
+                    <tr>
+                        <td style="width: 120px; vertical-align: top; text-indent: 0;"><b>PIHAK PERTAMA</b></td>
+                        <td style="vertical-align: top; text-align: justify;">: CV. GRACE HAVEN TRANSPORT (Grace's Electronic), berkedudukan di Sekolaq Darat RT 007 RW 000, Kelurahan/Desa Sekolaq Darat, Kecamatan Sekolaq Darat, Kabupaten Kutai Barat, Provinsi Kalimantan Timur. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh ADI HARIANTO, S.E. selaku Direktur.</td>
+                    </tr>
+                    <tr>
+                        <td style="vertical-align: top; text-indent: 0;"><b>PIHAK KEDUA</b></td>
+                        <td style="vertical-align: top; text-align: justify;">: {kredit_data['customer_nama'].upper()}, lahir di {kredit_data['alamat'].split(',')[0] if kredit_data['alamat'] else '-'} tanggal {tgl_lahir_indo}, Warga Negara Indonesia, Pekerjaan Wiraswasta, bertempat tinggal di {kredit_data['alamat'] or '-'}, Telp/WA: {kredit_data['telepon'] or '-'}. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: {nik_tampil or '-'}.</td>
+                    </tr>
+                </table>
+                
+                <p>Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan sebagai berikut:</p>
+
+                <div class="pasal-title">PASAL 1<br>OBJEK PERJANJIAN</div>
+                <p>Pihak Pertama setuju untuk membiayai pembelian barang berupa <b>{kredit_data['produk_nama']}</b> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
+
+                <div class="pasal-title">PASAL 2<br>KETENTUAN PEMBAYARAN</div>
+                <ol class="pasal-list">
+                    <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar {format_rp(kredit_data['dp'])}.</li>
+                    <li>Total kewajiban angsuran yang harus dibayar oleh Pihak Kedua adalah sebesar {format_rp(kredit_data['total_hutang'])}.</li>
+                    <li>Jangka waktu pembiayaan adalah {kredit_data['tenor']} ({kredit_data['tenor']}) bulan, dengan angsuran bulanan sebesar {format_rp(kredit_data['cicilan_bulan'])}.</li>
+                    <li>Angsuran pertama wajib dibayarkan pada tanggal {jt_pertama_indo} dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan angsuran terakhir tanggal {tgl_terakhir}.</li>
+                    <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT.</li>
+                    <li>Pihak Kedua dikenakan Biaya Administrasi berupa bea materai sebesar {format_rp(biaya_materai)} yang posisinya BERADA DI LUAR nominal angsuran. Biaya tersebut akan ditagihkan dan dibayarkan bersamaan dengan setoran angsuran terakhir (angsuran ke-{kredit_data['tenor']}). Dengan demikian, total pembayaran pada bulan ke-{kredit_data['tenor']} adalah sebesar {format_rp(total_bulan_terakhir)} ({format_rp(cicilan)} angsuran + {format_rp(biaya_materai)} materai).</li>
+                </ol>
+
+                <div class="pasal-title">PASAL 3<br>DENDA DAN WANPRESTASI</div>
+                <ol class="pasal-list">
+                    <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar {denda_persen}% (nol koma empat persen) per hari dari jumlah angsuran yang tertunggak, dengan total denda maksimal 100% dari pokok pembiayaan.</li>
+                    <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
+                    <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking, yang mengakibatkan Debitur masuk dalam daftar hitam (blacklist) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
+                </ol>
+
+                <div class="pasal-title">PASAL 4<br>PENYELESAIAN SENGKETA DAN DOMISILI</div>
+                <ol class="pasal-list">
+                    <li>Segala perselisihan yang timbul dari perjanjian ini akan diselesaikan secara musyawarah mufakat oleh Para Pihak.</li>
+                    <li>Apabila musyawarah tidak mencapai kesepakatan, Para Pihak sepakat untuk menyelesaikannya melalui Lembaga Alternatif Penyelesaian Sengketa Sektor Jasa Keuangan (LAPS SJK) atau Pengadilan Negeri Kutai Barat.</li>
+                    <li>Kreditur dilarang melakukan penarikan objek pembiayaan secara paksa tanpa prosedur hukum yang sah sesuai dengan POJK Nomor 22 Tahun 2023 dan Putusan Mahkamah Konstitusi Nomor 18/PUU-XVII/2019.</li>
+                    <li>Para pihak memilih domisili hukum yang umum dan tetap di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
+                </ol>
+
+                <div class="pasal-title">PASAL 5<br>KETENTUAN PENUTUP</div>
+                <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
+
+                <!-- TANDA TANGAN -->
+                <table class="ttd-table">
+                    <tr>
+                        <td>
+                            <div class="ttd-title">PIHAK PERTAMA (KREDITUR)</div>
+                            <div class="ttd-box" style="border: 1px solid #1e40af;">
+                                <div style="color: #1e40af; font-size: 10px; font-weight: bold; margin-bottom: 5px;">✔ TERSERTIFIKASI</div>
+                                <div style="font-weight: bold; font-size: 11px;">ADI HARIANTO, S.E.</div>
+                                <div style="font-size: 9px; color: #555;">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
+                                <svg id="signatureBarcode" style="margin-top: 5px;"></svg>
                             </div>
-                            <div class="sig-name-bold">ADI HARIANTO, S.E.</div>
-                            <div class="sig-sub">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
-                            <svg id="signatureBarcode" style="margin-top: 5px;"></svg>
-                        </div>
-                        
-                        <div class="sig-name-underline">ADI HARIANTO, S.E.</div>
-                        <div class="sig-sub" style="margin-top: 2px;">Direktur CV. Grace Haven Transport</div>
-                    </div>
-                    
-                    <!-- Pihak Kedua (Debitur) -->
-                    <div class="sig-box">
-                        <div class="sig-title">PIHAK KEDUA (DEBITUR)</div>
-                        
-                        <div class="sig-box-debitur">
-                            <div class="emeterai-wrap">
-                                <div class="emeterai">
-                                    <div class="emeterai-logo">🦅</div>
-                                    <div class="emeterai-text">METERAI TEMPEL</div>
-                                    <div class="emeterai-val">10000</div>
-                                </div>
+                            <div class="ttd-name">ADI HARIANTO, S.E.</div>
+                            <div style="font-size: 10px;">Direktur CV. Grace Haven Transport</div>
+                        </td>
+                        <td>
+                            <div class="ttd-title">PIHAK KEDUA (DEBITUR)</div>
+                            <div class="ttd-box" style="border: 1px dashed #777;">
+                                <div style="font-size: 9px; margin-bottom: 5px;">(Tempel e-Meterai / TTD Basah)</div>
+                                <div style="width: 60px; height: 35px; background: #8b5cf6; color: white; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: bold; border-radius: 3px;">METERAI 10000</div>
                             </div>
-                            <div class="sig-sub">(Tempel e-Meterai / TTD Basah)</div>
-                        </div>
-                        
-                        <div class="sig-name-underline">{kredit_data['customer_nama'].upper()}</div>
-                        <div class="sig-nik">Pemegang KTP NIK: {nik_tampil or '-'}</div>
-                    </div>
+                            <div class="ttd-name">{kredit_data['customer_nama'].upper()}</div>
+                            <div style="font-size: 10px;">Pemegang KTP NIK: {nik_tampil or '-'}</div>
+                        </td>
+                    </tr>
+                </table>
+                
+                <div style="text-align: center; font-size: 10px; margin-top: 30px;">
+                    Dokumen ini sah dan mengikat secara hukum.
                 </div>
             </div>
-            
-            <footer class="footer" style="padding: 8px 22px 12px; text-align: center; font-size: 8.5px; color: #9ca3af; line-height: 1.6; border-top: 1px solid #e5e7eb;">
-                <div style="font-family: Georgia, serif; font-size: 9.5px; color: #1a2b47; font-weight: 700; letter-spacing: 0.8px;">GRACE'S ELECTRONIC</div>
-                <div>Dokumen ini sah dan mengikat secara hukum.</div>
-            </footer>
         </div>
         
         <script>
             window.onload = function() {{
                 JsBarcode("#signatureBarcode", "GRC-{kredit_data['id']}-TN", {{
                     format: "CODE128",
-                    width: 1.5,
-                    height: 35,
+                    width: 1.2,
+                    height: 30,
                     displayValue: false,
                     margin: 0,
-                    lineColor: "#1e3a8a",
+                    lineColor: "#000000",
                     background: "transparent"
                 }});
             }};
@@ -1120,7 +1017,21 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         </html>
         """
         
+        # Tampilkan Preview
         components.html(html_slip, height=1600, scrolling=True)
+        
+        # Tombol Print Native
+        if st.button("🖨️ Cetak Dokumen / Simpan PDF"):
+            components.html(
+                """
+                <script>
+                    window.print();
+                </script>
+                """,
+                height=0,
+            )
+            st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang di pengaturan print.")
+
 
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
