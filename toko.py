@@ -762,8 +762,9 @@ elif pilihan == "💰 Pembayaran Cicilan":
         st.dataframe(df_bayar, use_container_width=True, hide_index=True)
 
 elif pilihan == "🖨️ Cetak Slip Kredit":
-    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit</h1><p>Cetak perjanjian kredit dan jadwal angsuran</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian Kredit</h1><p>Cetak dokumen resmi (2 Halaman)</p></div>', unsafe_allow_html=True)
 
+    # Ambil data kredit
     df_kredit_cetak = pd.read_sql_query("""
         SELECT k.id, c.nama as customer_nama, c.telepon, c.alamat, c.nik,
                p.nama as produk_nama, k.harga_cash, k.dp, k.pokok_hutang, k.total_hutang,
@@ -780,73 +781,213 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         pilih_id = st.selectbox("Pilih ID Kredit untuk dicetak", df_kredit_cetak['id'].tolist())
         kredit_data = df_kredit_cetak[df_kredit_cetak['id'] == pilih_id].iloc[0]
 
-        opsi_jadwal = st.radio("Tampilkan Jadwal Angsuran", ["Jadwal Asli", "Jadwal Kustom (jika ada)"])
-        if opsi_jadwal == "Jadwal Asli":
-            df_jadwal = pd.DataFrame(build_jadwal_angsuran(
-                kredit_data['total_hutang'], kredit_data['cicilan_bulan'],
-                kredit_data['tenor'], kredit_data['tanggal_kredit']
-            ))
-        else:
-            df_jadwal = get_schedule_for_invoice(
-                kredit_data['id'], "kustom", kredit_data['total_hutang'],
-                kredit_data['cicilan_bulan'], kredit_data['tenor'], kredit_data['tanggal_kredit']
-            )
+        # Ambil jadwal angsuran
+        df_jadwal = pd.DataFrame(build_jadwal_angsuran(
+            kredit_data['total_hutang'], kredit_data['cicilan_bulan'],
+            kredit_data['tenor'], kredit_data['tanggal_kredit']
+        ))
 
+        # Helper format tanggal Indonesia
+        def format_tgl_indo(tgl_str):
+            try:
+                dt = datetime.strptime(tgl_str, "%Y-%m-%d")
+                bulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+                return f"{dt.day} {bulan[dt.month-1]} {dt.year}"
+            except:
+                return tgl_str
+
+        # Siapkan Variabel untuk PDF
+        tgl_kredit_indo = format_tgl_indo(kredit_data['tanggal_kredit'])
+        jt_pertama_indo = format_tgl_indo(kredit_data['jatuh_tempo'])
+        
+        # Denda & Materai
+        denda_persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
+        biaya_materai = 10000 # Sesuai PDF
+        cicilan = kredit_data['cicilan_bulan']
+        total_angsuran = kredit_data['total_hutang']
+        
+        # Baris Tabel Jadwal (Hanya Kolom KE & JATUH TEMPO sesuai PDF)
+        jadwal_rows = ""
+        for _, row in df_jadwal.iterrows():
+            jadwal_rows += f"<tr><td style='text-align:center;'>{row['ke']}</td><td style='text-align:center;'>{row['jatuh_tempo']}</td></tr>"
+
+        # HTML & CSS Desain (Persis PDF)
         html_slip = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 20px; border: 1px solid #ccc; background: white;">
-            <h2 style="text-align: center;">GRACE'S STORE</h2>
-            <p style="text-align: center;">{ALAMAT_TOKO}</p>
-            <hr>
-            <h3 style="text-align: center;">PERJANJIAN KREDIT</h3>
-            <p><strong>ID Kredit:</strong> {kredit_data['id']}</p>
-            <p><strong>Tanggal:</strong> {kredit_data['tanggal_kredit']}</p>
-            <p><strong>Customer:</strong> {kredit_data['customer_nama']}</p>
-            <p><strong>NIK:</strong> {kredit_data['nik'] or '-'}</p>
-            <p><strong>Telepon:</strong> {kredit_data['telepon'] or '-'}</p>
-            <p><strong>Alamat:</strong> {kredit_data['alamat'] or '-'}</p>
-            <hr>
-            <h4>Detail Produk</h4>
-            <p><strong>Produk:</strong> {kredit_data['produk_nama']}</p>
-            <p><strong>Harga Cash:</strong> {format_rp(kredit_data['harga_cash'])}</p>
-            <p><strong>DP:</strong> {format_rp(kredit_data['dp'])}</p>
-            <p><strong>Pokok Hutang:</strong> {format_rp(kredit_data['pokok_hutang'])}</p>
-            <p><strong>Total Hutang (dengan bunga):</strong> {format_rp(kredit_data['total_hutang'])}</p>
-            <p><strong>Tenor:</strong> {kredit_data['tenor']} bulan</p>
-            <p><strong>Cicilan per bulan:</strong> {format_rp(kredit_data['cicilan_bulan'])}</p>
-            <p><strong>Jatuh Tempo Pertama:</strong> {kredit_data['jatuh_tempo']}</p>
-            <p><strong>Status:</strong> {kredit_data['status']}</p>
-            <hr>
-            <h4>Jadwal Angsuran</h4>
-            <table border="1" cellpadding="5" cellspacing="0" style="width:100%; border-collapse: collapse;">
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Times+New+Roma&display=swap');
+            .doc-container {{
+                font-family: 'Times New Roman', Times, serif;
+                color: #000;
+                background: white;
+                max-width: 800px;
+                margin: auto;
+                padding: 40px;
+                line-height: 1.5;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            }}
+            .header-doc {{ text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }}
+            .header-doc h1 {{ margin: 0; font-size: 24px; letter-spacing: 2px; }}
+            .header-doc p {{ margin: 5px 0; font-size: 12px; }}
+            
+            .section-title {{ font-weight: bold; background: #e0e0e0; padding: 5px 10px; margin-top: 20px; font-size: 14px; }}
+            
+            .data-table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+            .data-table td {{ padding: 5px 0; vertical-align: top; }}
+            
+            .dp-box {{ background: #f0f0f0; padding: 10px; text-align: center; border-radius: 5px; margin: 15px 0; font-weight: bold; }}
+            
+            .jadwal-table {{ width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }}
+            .jadwal-table th, .jadwal-table td {{ border: 1px solid #000; padding: 6px; }}
+            
+            .warning-box {{ background: #fff3f3; border-left: 4px solid #d32f2f; padding: 10px; margin: 20px 0; font-size: 12px; }}
+            .warning-box h4 {{ margin: 0 0 5px 0; color: #d32f2f; text-transform: uppercase; }}
+            
+            .page-break {{ page-break-before: always; margin-top: 50px; }}
+            
+            .pasal-title {{ text-align: center; font-weight: bold; font-size: 14px; margin-top: 20px; margin-bottom: 10px; }}
+            .pasal-content {{ text-align: justify; font-size: 13px; text-indent: 30px; margin-bottom: 10px; }}
+            .pasal-list {{ font-size: 13px; padding-left: 20px; text-align: justify; }}
+            
+            .ttd-container {{ display: flex; justify-content: space-between; margin-top: 50px; text-align: center; font-size: 13px; }}
+            .ttd-box {{ width: 45%; }}
+            .ttd-space {{ height: 80px; }}
+            
+            @media print {{
+                body {{ background: white; margin: 0; padding: 0; }}
+                .doc-container {{ box-shadow: none; padding: 0; max-width: 100%; }}
+                .page-break {{ page-break-before: always; }}
+            }}
+        </style>
+
+        <div class="doc-container">
+            <!-- ================= HALAMAN 1 ================= -->
+            <div class="header-doc">
+                <h1>GRACE'S ELECTRONIC</h1>
+                <p>Cash & Credit · Authorized Retailer</p>
+                <p>Sekolah Darat RT 007 RW 000, Kel. Sekolah Darat, Kec. Sekolah Darat, Kab. Kutai Barat, Prov. Kalimantan Timur</p>
+                <p>HP/WA: 0822-9954-8411</p>
+                <br>
+                <p style="text-align:left; font-weight:bold;">Status: <span style="color:green;">● {kredit_data['status'].upper()}</span></p>
+            </div>
+
+            <div class="section-title">DATA CUSTOMER</div>
+            <table class="data-table">
+                <tr><td style="width:120px;">Nama</td><td>: {kredit_data['customer_nama']}</td></tr>
+                <tr><td>Telepon</td><td>: {kredit_data['telepon'] or '-'}</td></tr>
+                <tr><td>NIK</td><td>: {kredit_data['nik'] or '-'}</td></tr>
+                <tr><td>Alamat</td><td>: {kredit_data['alamat'] or '-'}</td></tr>
+            </table>
+
+            <div class="dp-box">
+                DP DIBAYAR<br>
+                <span style="font-size: 18px;">{format_rp(kredit_data['dp'])}</span>
+            </div>
+
+            <div class="section-title">Jadwal Angsuran — {kredit_data['tenor']} Bulan</div>
+            <table class="jadwal-table">
                 <thead>
-                    <tr><th>Ke</th><th>Jatuh Tempo</th><th>Angsuran</th><th>Sisa</th></tr>
+                    <tr>
+                        <th style="width: 50%;">KE</th>
+                        <th style="width: 50%;">JATUH TEMPO</th>
+                    </tr>
                 </thead>
                 <tbody>
-        """
-        for _, row in df_jadwal.iterrows():
-            html_slip += f"<tr><td>{row['ke']}</td><td>{row['jatuh_tempo']}</td><td>{format_rp(row['angsuran'])}</td><td>{format_rp(row['sisa'])}</td></tr>"
-        
-        html_slip += f"""
+                    {jadwal_rows}
                 </tbody>
             </table>
-            <br>
-            <p style="text-align: center;">Terima kasih telah berbelanja di GRACE'S STORE</p>
-            <p style="text-align: center; font-size: 0.8em;">Dokumen ini dicetak pada {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</p>
+            <p style="font-size: 11px; margin-top: 10px;">*Catatan: Terdapat Biaya Administrasi/Materai sebesar <strong>{format_rp(biaya_materai)}</strong> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir (ke-{kredit_data['tenor']}). Total yang disetor pada bulan ke-{kredit_data['tenor']} adalah <strong>{format_rp(cicilan + biaya_materai)}</strong>.</p>
+
+            <div class="section-title">PEMBAYARAN TRANSFER RESMI</div>
+            <table class="data-table">
+                <tr><td style="width:120px;">Bank Mandiri</td><td>: <strong>148-00-2889246-4</strong></td></tr>
+                <tr><td>Atas Nama</td><td>: <strong>CV GRACE HAVEN TRANSPORT</strong></td></tr>
+            </table>
+
+            <div class="warning-box">
+                <h4>PENTING - KONSEKUENSI MANGKIR</h4>
+                <p>Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking. Hal ini mengakibatkan Debitur masuk dalam daftar hitam (blacklist) yang akan menyulitkan Debitur untuk mengajukan pinjaman/kredit di lembaga keuangan manapun di kemudian hari.</p>
+            </div>
+            
+            <p style="text-align:center; font-size:11px; margin-top:30px; border-top: 1px solid #000; padding-top: 10px;">
+                <strong>GRACE'S ELECTRONIC</strong><br>
+                Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan sebagai bukti pembayaran yang sah.
+            </p>
+
+            <!-- ================= HALAMAN 2 ================= -->
+            <div class="page-break"></div>
+            
+            <p class="pasal-content">Pada hari ini, <strong>{tgl_kredit_indo}</strong>, yang bertanda tangan di bawah ini:</p>
+            
+            <p class="pasal-content"><strong>PIHAK PERTAMA :</strong> CV. GRACE HAVEN TRANSPORT (Grace's Electronic), berkedudukan di Sekolaq Darat RT 007 RW 000, Kelurahan/Desa Sekolaq Darat, Kecamatan Sekolaq Darat, Kabupaten Kutai Barat, Provinsi Kalimantan Timur. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh ADI HARIANTO, S.E. selaku Direktur.</p>
+            
+            <p class="pasal-content"><strong>PIHAK KEDUA :</strong> {kredit_data['customer_nama'].upper()}, Warga Negara Indonesia, Pekerjaan Wiraswasta, bertempat tinggal di {kredit_data['alamat'] or '-'}, Telp/WA: {kredit_data['telepon'] or '-'}. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: {kredit_data['nik'] or '-'}.</p>
+            
+            <p class="pasal-content">Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan sebagai berikut:</p>
+
+            <div class="pasal-title">PASAL 1<br>OBJEK PERJANJIAN</div>
+            <p class="pasal-content">Pihak Pertama setuju untuk membiayai pembelian barang berupa <strong>{kredit_data['produk_nama']}</strong> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
+
+            <div class="pasal-title">PASAL 2<br>KETENTUAN PEMBAYARAN</div>
+            <ol class="pasal-list">
+                <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar <strong>{format_rp(kredit_data['dp'])}</strong>.</li>
+                <li>Total kewajiban angsuran yang harus dibayar oleh Pihak Kedua adalah sebesar <strong>{format_rp(kredit_data['total_hutang'])}</strong>.</li>
+                <li>Jangka waktu pembiayaan adalah <strong>{kredit_data['tenor']} ({kredit_data['tenor']})</strong> bulan, dengan angsuran bulanan sebesar <strong>{format_rp(kredit_data['cicilan_bulan'])}</strong>.</li>
+                <li>Angsuran pertama wajib dibayarkan pada tanggal <strong>{jt_pertama_indo}</strong> dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan angsuran terakhir.</li>
+                <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT.</li>
+                <li>Pihak Kedua dikenakan Biaya Administrasi berupa bea materai sebesar {format_rp(biaya_materai)} yang posisinya BERADA DI LUAR nominal angsuran. Biaya tersebut akan ditagihkan dan dibayarkan bersamaan dengan setoran angsuran terakhir (angsuran ke-{kredit_data['tenor']}). Dengan demikian, total pembayaran pada bulan ke-{kredit_data['tenor']} adalah sebesar <strong>{format_rp(cicilan + biaya_materai)}</strong> (Rp {cicilan:,.0f} angsuran + Rp {biaya_materai:,.0f} materai).</li>
+            </ol>
+
+            <div class="pasal-title">PASAL 3<br>DENDA DAN WANPRESTASI</div>
+            <ol class="pasal-list">
+                <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <strong>{denda_persen}%</strong> per hari dari jumlah angsuran yang tertunggak, dengan total denda maksimal 100% dari pokok pembiayaan.</li>
+                <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
+                <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking, yang mengakibatkan Debitur masuk dalam daftar hitam (blacklist) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
+            </ol>
+
+            <div class="pasal-title">PASAL 4<br>PENYELESAIAN SENGKETA DAN DOMISILI</div>
+            <ol class="pasal-list">
+                <li>Segala perselisihan yang timbul dari perjanjian ini akan diselesaikan secara musyawarah mufakat oleh Para Pihak.</li>
+                <li>Apabila musyawarah tidak mencapai kesepakatan, Para Pihak sepakat untuk menyelesaikannya melalui Lembaga Alternatif Penyelesaian Sengketa Sektor Jasa Keuangan (LAPS SJK) atau Pengadilan Negeri Kutai Barat.</li>
+                <li>Kreditur dilarang melakukan penarikan objek pembiayaan secara paksa tanpa prosedur hukum yang sah sesuai dengan POJK Nomor 22 Tahun 2023 dan Putusan Mahkamah Konstitusi Nomor 18/PUU-XVII/2019.</li>
+                <li>Para pihak memilih domisili hukum yang umum dan tetap di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
+            </ol>
+
+            <div class="pasal-title">PASAL 5<br>KETENTUAN PENUTUP</div>
+            <p class="pasal-content">Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
+
+            <div class="ttd-container">
+                <div class="ttd-box">
+                    <p>PIHAK PERTAMA (KREDITUR)</p>
+                    <div class="ttd-space"></div>
+                    <p><strong><u>ADI HARIANTO, S.E.</u></strong><br>Direktur CV. Grace Haven Transport</p>
+                </div>
+                <div class="ttd-box">
+                    <p>PIHAK KEDUA (DEBITUR)</p>
+                    <div class="ttd-space"></div>
+                    <p><strong><u>{kredit_data['customer_nama'].upper()}</u></strong><br>Pemegang KTP NIK: {kredit_data['nik'] or '-'}</p>
+                </div>
+            </div>
+            
+            <p style="text-align:center; font-size:11px; margin-top:30px;">
+                Dokumen ini sah dan mengikat secara hukum.
+            </p>
         </div>
         """
         
+        # Tampilkan di Streamlit
         st.markdown(html_slip, unsafe_allow_html=True)
-        if st.button("🖨️ Cetak Slip"):
+        
+        # Tombol Print
+        if st.button("🖨️ Cetak Dokumen"):
             components.html(
-                f"""
+                """
                 <script>
                     window.print();
                 </script>
                 """,
                 height=0,
             )
-            st.success("Perintah cetak dikirim ke browser.")
-
+            st.success("Perintah cetak dikirim ke browser. Pastikan untuk mengaktifkan 'Background Graphics' di pengaturan print browser Anda.")
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Daftar Customer", "➕ Tambah/Edit Customer"])
