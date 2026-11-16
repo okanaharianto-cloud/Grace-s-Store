@@ -922,7 +922,7 @@ elif pilihan == "👥 Data Customer":
                         log_aksi(st.session_state.username, "EDIT_CUSTOMER", f"ID {customer_edit_id} -> {nama}")
                         flash(f"Data customer '{nama}' berhasil diperbarui.")
                     st.rerun()
-                    elif pilihan == "🤝 Serah Terima Barang":
+elif pilihan == "🤝 Serah Terima Barang":
     st.markdown('<div class="main-header"><h1>🤝 Serah Terima Barang</h1><p>Catat bukti serah terima unit kredit (dengan IMEI & foto)</p></div>', unsafe_allow_html=True)
 
     df_kredit_st = pd.read_sql_query("""
