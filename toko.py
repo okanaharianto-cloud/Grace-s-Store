@@ -1304,7 +1304,7 @@ elif pilihan == "📊 Laporan & Analitik":
                 tooltip=["Kategori", "Total_Penjualan", "Total_Laba"]
             ).properties(height=350, title="Distribusi Penjualan per Kategori")
             st.altair_chart(chart_kat, use_container_width=True)
-            elif pilihan == "👕 Modal vs Profit":
+elif pilihan == "👕 Modal vs Profit":
     st.markdown('<div class="main-header"><h1>👕 Modal vs Profit</h1><p>Analisis modal, harga jual, dan potensi laba</p></div>', unsafe_allow_html=True)
 
     tab1, tab2, tab3 = st.tabs(["📦 Per Produk", "🏷️ Per Kategori", "💹 Laba Transaksi Cash"])
