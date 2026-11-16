@@ -607,7 +607,7 @@ elif pilihan == "🛒 Jual Cash":
             ORDER BY tc.id DESC LIMIT 50
         """, conn)
         st.dataframe(df_cash, use_container_width=True, hide_index=True)
-        elif pilihan == "📤 Kredit Baru":
+elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
 
     df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat, nik FROM customer ORDER BY nama", conn)
