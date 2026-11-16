@@ -585,12 +585,14 @@ elif pilihan == "🧾 Cetak Invoice Cash":
 
         tgl_trx = format_tgl_indo(trx_data['tanggal'])
 
+        # HTML & CSS dengan integrasi JsBarcode
         html_cash = f"""
         <!DOCTYPE html>
         <html lang="id">
         <head>
         <meta charset="utf-8">
         <title>Invoice Cash {no_invoice_cash}</title>
+        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
         <style>
             * {{ box-sizing: border-box; margin: 0; padding: 0; }}
             body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 12px; }}
@@ -630,10 +632,13 @@ elif pilihan == "🧾 Cetak Invoice Cash":
             .footer-box h4 {{ margin: 0 0 5px 0; text-transform: uppercase; }}
             .footer-box p {{ margin: 2px 0; color: #555; }}
             
-            .signature-area {{ text-align: right; margin-top: 40px; }}
-            .signature-box {{ display: inline-block; text-align: center; width: 200px; }}
-            .signature-box p {{ margin-bottom: 60px; }}
-            .signature-box .name {{ font-weight: bold; border-top: 1px solid #000; padding-top: 5px; }}
+            /* SIGNATURE TTD ELEKTRONIK */
+            .signature-area {{ display: flex; justify-content: flex-end; margin-top: 40px; }}
+            .sig-box {{ text-align: center; width: 250px; border: 1px solid #93c5fd; background: #eff6ff; padding: 15px; border-radius: 8px; }}
+            .cert-badge {{ color: #2563eb; font-size: 10px; font-weight: bold; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; gap: 5px; }}
+            .sig-name {{ font-weight: bold; font-size: 12px; color: #1e3a8a; }}
+            .sig-sub {{ font-size: 9px; color: #64748b; margin-top: 2px; margin-bottom: 10px; }}
+            .sig-line {{ font-weight: bold; font-size: 11px; text-decoration: underline; margin-top: 10px; }}
 
             @media print {{
                 @page {{ size: A4 portrait; margin: 15mm; }}
@@ -729,18 +734,43 @@ elif pilihan == "🧾 Cetak Invoice Cash":
                     </div>
                 </div>
 
+                <!-- TANDA TANGAN ELEKTRONIK -->
                 <div class="signature-area">
-                    <div class="signature-box">
-                        <p>Hormat Kami,</p>
-                        <div class="name">{get_pengaturan("bisnis_nama")}</div>
+                    <div class="sig-box">
+                        <div class="cert-badge">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                            TERSERTIFIKASI
+                        </div>
+                        <div class="sig-name">{get_pengaturan("bisnis_nama").upper()}</div>
+                        <div class="sig-sub">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
+                        
+                        <!-- Barcode akan dirender di sini -->
+                        <svg id="signatureBarcodeCash"></svg>
+                        
+                        <div class="sig-line">Authorized Signature</div>
                     </div>
                 </div>
             </div>
+
+            <!-- SCRIPT UNTUK GENERATE BARCODE -->
+            <script>
+                window.onload = function() {{
+                    JsBarcode("#signatureBarcodeCash", "INV-C-{trx_data['id']}", {{
+                        format: "CODE128",
+                        width: 1.2,
+                        height: 30,
+                        displayValue: false,
+                        margin: 0,
+                        lineColor: "#1e3a8a",
+                        background: "transparent"
+                    }});
+                }};
+            </script>
         </body>
         </html>
         """
         
-        components.html(html_cash, height=900, scrolling=True)
+        components.html(html_cash, height=1000, scrolling=True)
         
         if st.button("🖨️ Cetak Invoice Cash"):
             components.html(
@@ -752,6 +782,7 @@ elif pilihan == "🧾 Cetak Invoice Cash":
                 height=0,
             )
             st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
+
 elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
 
