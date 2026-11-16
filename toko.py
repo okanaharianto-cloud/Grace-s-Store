@@ -91,7 +91,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS pembayaran (id INTEGER PRIMARY KEY AUTOI
 c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
 c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
 c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
 conn.commit()
 
@@ -243,13 +242,6 @@ def build_jadwal_angsuran(total_hutang, cicilan_bulan, tenor, tanggal_kredit_str
         schedule.append({"ke": i, "jatuh_tempo": tgl.strftime("%d-%m-%Y"), "angsuran": bayar, "sisa": sisa})
     return schedule
 
-def get_schedule_for_invoice(kredit_id, opsi, total, cicilan, tenor, tgl_str):
-    df_custom = pd.read_sql_query("SELECT ke, jatuh_tempo, angsuran, sisa FROM jadwal_kustom WHERE kredit_id=? AND opsi=? ORDER BY ke", conn, params=(kredit_id, opsi))
-    if not df_custom.empty:
-        return df_custom
-    else:
-        return pd.DataFrame(build_jadwal_angsuran(total, cicilan, tenor, tgl_str))
-
 def save_uploaded_file(uploaded_file, prefix):
     if uploaded_file is not None:
         ext = uploaded_file.name.split('.')[-1].lower()
@@ -311,6 +303,7 @@ with st.sidebar:
         "🧮 Input Produk & Skema", 
         "📥 Barang Masuk", 
         "🛒 Jual Cash", 
+        "🧾 Cetak Invoice Cash",
         "📤 Kredit Baru",
         "💰 Pembayaran Cicilan", 
         "🖨️ Cetak Slip Kredit",
@@ -551,7 +544,215 @@ elif pilihan == "🛒 Jual Cash":
             ORDER BY tc.id DESC LIMIT 50
         """, conn)
         st.dataframe(df_cash, use_container_width=True, hide_index=True)
-elif pilihan == "📤 Kredit Baru":
+
+elif pilihan == "🧾 Cetak Invoice Cash":
+    st.markdown('<div class="main-header"><h1>🧾 Cetak Invoice Cash</h1><p>Cetak Faktur Penjualan Tunai Profesional</p></div>', unsafe_allow_html=True)
+
+    df_cash = pd.read_sql_query("""
+        SELECT tc.id, p.nama as produk_nama, p.kategori, tc.jumlah, tc.harga_jual_satuan, tc.total_harga, tc.uang_bayar, tc.kembalian, tc.tanggal
+        FROM transaksi_cash tc 
+        JOIN produk p ON p.id = tc.produk_id
+        ORDER BY tc.id DESC
+    """, conn)
+
+    if df_cash.empty:
+        st.info("Belum ada transaksi penjualan cash.")
+    else:
+        options = {f"ID {row['id']} - {row['produk_nama']} (Tgl: {row['tanggal']})": row['id'] for _, row in df_cash.iterrows()}
+        pilih_trx = st.selectbox("Pilih Transaksi Penjualan Cash", list(options.keys()))
+        trx_id = options[pilih_trx]
+        trx_data = df_cash[df_cash['id'] == trx_id].iloc[0]
+
+        st.markdown("### ✏️ Kustomisasi Sebelum Cetak")
+        nama_pelanggan = st.text_input("Nama Pelanggan (Bisa Diedit)", value="Pelanggan Umum")
+        no_invoice_cash = st.text_input("Nomor Invoice", value=f"INV-C-{trx_data['id']:04d}")
+
+        logo_path = get_pengaturan("bisnis_logo")
+        warna_tema = get_pengaturan("tema_warna", "#1e3a8a")
+        
+        logo_base64 = ""
+        if logo_path and os.path.exists(logo_path):
+            with open(logo_path, "rb") as image_file:
+                logo_base64 = f"data:image/png;base64,{base64.b64encode(image_file.read()).decode()}"
+
+        def format_tgl_indo(tgl_str):
+            try:
+                dt = datetime.strptime(tgl_str, "%Y-%m-%d %H:%M:%S")
+                bulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+                return f"{dt.day} {bulan[dt.month-1]} {dt.year}"
+            except:
+                return tgl_str
+
+        tgl_trx = format_tgl_indo(trx_data['tanggal'])
+
+        html_cash = f"""
+        <!DOCTYPE html>
+        <html lang="id">
+        <head>
+        <meta charset="utf-8">
+        <title>Invoice Cash {no_invoice_cash}</title>
+        <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+            body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 12px; }}
+            .page {{ max-width: 800px; margin: 0 auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 40px; }}
+            
+            .header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid {warna_tema}; padding-bottom: 20px; margin-bottom: 20px; }}
+            .header-left {{ display: flex; gap: 15px; align-items: center; }}
+            .header-left img {{ max-height: 60px; max-width: 120px; }}
+            .company-details h1 {{ margin: 0; color: {warna_tema}; font-size: 20px; }}
+            .company-details p {{ margin: 2px 0; font-size: 10px; color: #555; }}
+            .invoice-title {{ text-align: right; }}
+            .invoice-title h2 {{ margin: 0; color: {warna_tema}; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }}
+            .invoice-title p {{ margin: 3px 0; font-size: 11px; }}
+            
+            .info-grid {{ display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 11px; }}
+            .info-box h4 {{ margin: 0 0 5px 0; color: #888; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #eee; padding-bottom: 3px; }}
+            .info-box p {{ margin: 2px 0; font-weight: 600; }}
+            .info-box .sub {{ font-weight: normal; color: #555; }}
+            
+            .table-data {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }}
+            .table-data th {{ background: {warna_tema}; color: white; padding: 10px; text-align: left; }}
+            .table-data th.right {{ text-align: right; }}
+            .table-data th.center {{ text-align: center; }}
+            .table-data td {{ padding: 10px; border-bottom: 1px solid #eee; }}
+            .table-data td.right {{ text-align: right; }}
+            .table-data td.center {{ text-align: center; }}
+            
+            .total-box {{ display: flex; justify-content: flex-end; margin-bottom: 30px; }}
+            .total-table {{ width: 50%; font-size: 12px; }}
+            .total-table td {{ padding: 5px 10px; }}
+            .total-table .label {{ text-align: right; font-weight: 600; color: #555; }}
+            .total-table .value {{ text-align: right; font-weight: bold; }}
+            .total-table .grand-total {{ font-size: 16px; color: {warna_tema}; border-top: 2px solid #ccc; border-bottom: 2px solid #ccc; padding: 10px; }}
+            
+            .footer-info {{ display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 40px; }}
+            .footer-box {{ width: 60%; }}
+            .footer-box h4 {{ margin: 0 0 5px 0; text-transform: uppercase; }}
+            .footer-box p {{ margin: 2px 0; color: #555; }}
+            
+            .signature-area {{ text-align: right; margin-top: 40px; }}
+            .signature-box {{ display: inline-block; text-align: center; width: 200px; }}
+            .signature-box p {{ margin-bottom: 60px; }}
+            .signature-box .name {{ font-weight: bold; border-top: 1px solid #000; padding-top: 5px; }}
+
+            @media print {{
+                @page {{ size: A4 portrait; margin: 15mm; }}
+                body {{ background: #fff; padding: 0; }}
+                .page {{ box-shadow: none; padding: 0; max-width: 100%; }}
+                * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
+            }}
+        </style>
+        </head>
+        <body>
+            <div class="page">
+                <div class="header">
+                    <div class="header-left">
+                        {f'<img src="{logo_base64}" alt="Logo">' if logo_base64 else ''}
+                        <div class="company-details">
+                            <h1>{get_pengaturan("bisnis_nama")}</h1>
+                            <p>{get_pengaturan("bisnis_alamat")}</p>
+                            <p>Telp: {get_pengaturan("bisnis_telepon")} | Email: {get_pengaturan("bisnis_email")}</p>
+                        </div>
+                    </div>
+                    <div class="invoice-title">
+                        <h2>INVOICE</h2>
+                        <p><strong>No:</strong> {no_invoice_cash}</p>
+                        <p><strong>Tanggal:</strong> {tgl_trx}</p>
+                    </div>
+                </div>
+
+                <div class="info-grid">
+                    <div class="info-box">
+                        <h4>Ditagihkan Kepada:</h4>
+                        <p>{nama_pelanggan}</p>
+                        <p class="sub">Pelanggan Cash / Umum</p>
+                    </div>
+                    <div class="info-box" style="text-align:right;">
+                        <h4>Info Pembayaran:</h4>
+                        <p>{get_pengaturan("bank_nama")}</p>
+                        <p class="sub">No. Rek: {get_pengaturan("bank_rekening")}</p>
+                        <p class="sub">A/N: {get_pengaturan("bank_atas_nama")}</p>
+                    </div>
+                </div>
+
+                <table class="table-data">
+                    <thead>
+                        <tr>
+                            <th class="center" style="width:5%;">NO</th>
+                            <th style="width:45%;">DESKRIPSI BARANG</th>
+                            <th class="center" style="width:10%;">QTY</th>
+                            <th class="right" style="width:20%;">HARGA</th>
+                            <th class="right" style="width:20%;">TOTAL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="center">1</td>
+                            <td>
+                                <strong>{trx_data['produk_nama']}</strong><br>
+                                <span style="font-size:10px; color:#666;">Kategori: {trx_data['kategori']}</span>
+                            </td>
+                            <td class="center">{trx_data['jumlah']}</td>
+                            <td class="right">{format_rp(trx_data['harga_jual_satuan'])}</td>
+                            <td class="right">{format_rp(trx_data['total_harga'])}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="total-box">
+                    <table class="total-table">
+                        <tr>
+                            <td class="label">Subtotal:</td>
+                            <td class="value">{format_rp(trx_data['total_harga'])}</td>
+                        </tr>
+                        <tr>
+                            <td class="label">Uang Dibayar:</td>
+                            <td class="value">{format_rp(trx_data['uang_bayar'])}</td>
+                        </tr>
+                        <tr>
+                            <td class="label">Kembalian:</td>
+                            <td class="value">{format_rp(trx_data['kembalian'])}</td>
+                        </tr>
+                        <tr>
+                            <td class="label grand-total">GRAND TOTAL:</td>
+                            <td class="value grand-total">{format_rp(trx_data['total_harga'])}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="footer-info">
+                    <div class="footer-box">
+                        <h4>Syarat & Ketentuan:</h4>
+                        <p>1. Barang yang sudah dibeli tidak dapat ditukar atau dikembalikan.</p>
+                        <p>2. Garansi berlaku sesuai dengan ketentuan produsen.</p>
+                        <p>3. Simpan struk ini sebagai bukti pembayaran yang sah.</p>
+                    </div>
+                </div>
+
+                <div class="signature-area">
+                    <div class="signature-box">
+                        <p>Hormat Kami,</p>
+                        <div class="name">{get_pengaturan("bisnis_nama")}</div>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        components.html(html_cash, height=900, scrolling=True)
+        
+        if st.button("🖨️ Cetak Invoice Cash"):
+            components.html(
+                """
+                <script>
+                    window.print();
+                </script>
+                """,
+                height=0,
+            )
+            st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
+            elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
 
     df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat, nik FROM customer ORDER BY nama", conn)
@@ -705,7 +906,6 @@ elif pilihan == "💰 Pembayaran Cicilan":
         """, conn)
         st.dataframe(df_bayar, use_container_width=True, hide_index=True)
 
-
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian</h1><p>Desain Invoice Modern & Surat Perjanjian Persis PDF</p></div>', unsafe_allow_html=True)
 
@@ -725,7 +925,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         pilih_id = st.selectbox("Pilih ID Kredit untuk dicetak", df_kredit_cetak['id'].tolist())
         kredit_data = df_kredit_cetak[df_kredit_cetak['id'] == pilih_id].iloc[0]
 
-        # --- FITUR EDIT MANUAL SEBELUM CETAK ---
         st.markdown("### ✏️ Kustomisasi Sebelum Cetak")
         col_ed1, col_ed2 = st.columns(2)
         with col_ed1:
@@ -758,7 +957,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         cicilan = kredit_data['cicilan_bulan']
         total_bulan_terakhir = cicilan + biaya_materai
         
-        # Build Table Rows
         jadwal_rows = ""
         for _, row in df_jadwal.iterrows():
             jadwal_rows += f"""
@@ -769,7 +967,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <td class="c"><span class="status-badge">BELUM</span></td>
             </tr>"""
 
-        # Build HTML
         html_slip = f"""
         <!DOCTYPE html>
         <html lang="id">
@@ -787,7 +984,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .btn-print {{ background-color: #1e3a8a; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; max-width: 820px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
             .btn-print:hover {{ background-color: #2563eb; }}
 
-            /* HEADER (KOP SURAT) */
+            /* HEADER */
             .hdr {{ background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 70%, #1e40af 100%); color: #fff; padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }}
             .brand {{ position: relative; z-index:1; }}
             .brand h1 {{ font-size: 19px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
@@ -989,7 +1186,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         
         <!-- ================= HALAMAN 2 (PERJANJIAN) ================= -->
         <div class="page page-2" style="page-break-before: always;">
-            <!-- KOP SURAT HALAMAN 2 -->
             <header class="hdr">
                 <div class="brand">
                     <h1>Grace's Electronic</h1>
@@ -1057,7 +1253,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     <div class="pasal-title">PASAL 5<br>KETENTUAN PENUTUP</div>
                     <p class="agreement-p">Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
 
-                    <!-- TANDA TANGAN -->
                     <div class="ttd-container">
                         <div>
                             <div class="ttd-box-title">PIHAK PERTAMA (KREDITUR)</div>
@@ -1108,9 +1303,18 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         </html>
         """
         
-        # Tampilkan Preview di Streamlit
         components.html(html_slip, height=1600, scrolling=True)
-
+        
+        if st.button("🖨️ Cetak Dokumen"):
+            st.info("💡 Tips: Klik tombol di bawah, lalu pada jendela print browser, pilih 'Save as PDF' dan centang 'Background Graphics'.")
+            components.html(
+                """
+                <script>
+                    window.print();
+                </script>
+                """,
+                height=0,
+            )
 
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
@@ -1187,7 +1391,7 @@ elif pilihan == "👥 Data Customer":
                         log_aksi(st.session_state.username, "EDIT_CUSTOMER", f"ID {customer_edit_id} -> {nama}")
                         flash(f"Data customer '{nama}' berhasil diperbarui.")
                     st.rerun()
-elif pilihan == "🤝 Serah Terima Barang":
+                    elif pilihan == "🤝 Serah Terima Barang":
     st.markdown('<div class="main-header"><h1>🤝 Serah Terima Barang</h1><p>Catat bukti serah terima unit kredit (dengan IMEI & foto)</p></div>', unsafe_allow_html=True)
 
     df_kredit_st = pd.read_sql_query("""
@@ -1569,7 +1773,7 @@ elif pilihan == "📊 Laporan & Analitik":
                 tooltip=["Kategori", "Total_Penjualan", "Total_Laba"]
             ).properties(height=350, title="Distribusi Penjualan per Kategori")
             st.altair_chart(chart_kat, use_container_width=True)
-elif pilihan == "🏢 Profil & Tema":
+            elif pilihan == "🏢 Profil & Tema":
     st.markdown('<div class="main-header"><h1>🏢 Profil & Tema</h1><p>Kustomisasi Kop Surat, Bank, dan Warna Invoice</p></div>', unsafe_allow_html=True)
     
     if st.session_state.role != "admin":
@@ -2033,83 +2237,74 @@ elif pilihan == "💾 Backup, Cetak & Impor":
                 st.error(f"Gagal membaca CSV: {e}")
 
 elif pilihan == "📄 Dokumen Bisnis":
-    st.markdown('<div class="main-header"><h1>📄 Dokumen Bisnis</h1><p>Cetak Faktur, Surat Jalan, dan Penawaran Profesional</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>📄 Dokumen Bisnis</h1><p>Cetak Invoice, Proforma, PO, Surat Jalan, & Penawaran</p></div>', unsafe_allow_html=True)
     
     if st.session_state.role != "admin" and st.session_state.role != "kasir":
         st.error("⛔ Halaman ini hanya untuk Admin/Kasir.")
         st.stop()
 
     tipe_dokumen = st.selectbox("Pilih Jenis Dokumen", [
-        "Faktur / Invoice Cash",
-        "Invoice Kredit",
-        "Surat Jalan (Delivery Note)",
-        "Surat Penawaran (Quotation)"
+        "INVOICE",
+        "PROFORMA INVOICE",
+        "PURCHASE ORDER",
+        "DELIVERY NOTE",
+        "QUOTATION"
     ])
 
     st.markdown("---")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Info Pelanggan")
-        df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat FROM customer ORDER BY nama", conn)
-        cust_options = {f"{row['nama']} - {row['telepon'] or ''}": row['id'] for _, row in df_cust.iterrows()}
-        pilih_cust = st.selectbox("Pilih Customer", ["(Tanpa Customer / Umum)"] + list(cust_options.keys()))
+    with st.form("form_dokumen_bisnis"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Info Pelanggan")
+            df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat FROM customer ORDER BY nama", conn)
+            cust_options = {f"{row['nama']} - {row['telepon'] or ''}": row['id'] for _, row in df_cust.iterrows()}
+            pilih_cust = st.selectbox("Pilih Customer", ["(Tanpa Customer / Umum)"] + list(cust_options.keys()))
+            
+        with col2:
+            st.subheader("Detail Dokumen")
+            no_dokumen = st.text_input("Nomor Dokumen", value=f"{tipe_dokumen[:3]}-{datetime.now().strftime('%Y%m%d%H%M')}")
+            tgl_dokumen = st.date_input("Tanggal Dokumen", value=datetime.now().date())
+            jatuh_tempo = st.date_input("Jatuh Tempo / Due Date", value=datetime.now().date() + timedelta(days=14))
+
+        st.subheader("Daftar Barang / Jasa")
+        init_df = pd.DataFrame([{"Deskripsi Barang": "", "Qty": 1, "Harga Satuan": 0.0, "Total": 0.0}])
         
-    with col2:
-        st.subheader("Detail Dokumen")
-        no_dokumen = st.text_input("Nomor Dokumen", value=f"DOC-{datetime.now().strftime('%Y%m%d%H%M')}")
-        tgl_dokumen = st.date_input("Tanggal Dokumen", value=datetime.now().date())
-        jatuh_tempo = st.date_input("Jatuh Tempo (jika ada)", value=datetime.now().date() + timedelta(days=14))
+        edited_df = st.data_editor(
+            init_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Deskripsi Barang": st.column_config.TextColumn("Deskripsi Barang", required=True),
+                "Qty": st.column_config.NumberColumn("Qty", min_value=1, step=1, format="%d"),
+                "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, format="Rp %,.0f"),
+                "Total": st.column_config.NumberColumn("Total (Rp)", min_value=0, format="Rp %,.0f", disabled=True)
+            }
+        )
 
-    st.subheader("Daftar Barang / Jasa")
-    df_produk = pd.read_sql_query("SELECT nama, harga_modal, COALESCE(harga_jual, ROUND(harga_modal*(1+COALESCE(markup_persen,5)/100),-2)) as harga_jual, stok FROM produk ORDER BY nama", conn)
-    
-    init_df = pd.DataFrame([{"Nama Barang": "", "Qty": 1, "Harga Satuan": 0.0, "Total": 0.0}])
-    
-    edited_df = st.data_editor(
-        init_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "Nama Barang": st.column_config.SelectboxColumn(
-                "Nama Barang",
-                help="Pilih dari daftar produk atau ketik manual",
-                options=df_produk['nama'].tolist() + ["(Barang Lain)"],
-                required=False
-            ),
-            "Qty": st.column_config.NumberColumn("Qty", min_value=1, step=1, format="%d"),
-            "Harga Satuan": st.column_config.NumberColumn("Harga Satuan (Rp)", min_value=0, format="Rp %,.0f"),
-            "Total": st.column_config.NumberColumn("Total (Rp)", min_value=0, format="Rp %,.0f", disabled=True)
-        }
-    )
+        total_semua = 0
+        for index, row in edited_df.iterrows():
+            if row["Deskripsi Barang"] and row["Deskripsi Barang"] != "":
+                edited_df.at[index, "Total"] = row["Qty"] * row["Harga Satuan"]
+                total_semua += row["Total"]
+        
+        st.markdown(f"**Total Keseluruhan: {format_rp(total_semua)}**")
+        
+        catatan_tambahan = st.text_area("Syarat & Ketentuan", "1. Pembayaran maksimal 14 hari setelah invoice diterbitkan.\n2. Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.")
 
-    total_semua = 0
-    for index, row in edited_df.iterrows():
-        if row["Nama Barang"] and row["Nama Barang"] != "":
-            edited_df.at[index, "Total"] = row["Qty"] * row["Harga Satuan"]
-            total_semua += row["Total"]
-    
-    st.markdown(f"**Total Keseluruhan: {format_rp(total_semua)}**")
-    
-    catatan_tambahan = st.text_area("Catatan / Keterangan Tambahan", "Barang yang sudah dibeli tidak dapat ditukar atau dikembalikan.")
+        submitted = st.form_submit_button("🖨️ Buat & Cetak Dokumen")
 
-    if st.button("🖨️ Buat & Cetak Dokumen"):
-        if not edited_df.empty and edited_df[edited_df["Nama Barang"] != ""].empty:
-            st.error("Pilih minimal satu barang.")
+    if submitted:
+        if not edited_df.empty and edited_df[edited_df["Deskripsi Barang"] != ""].empty:
+            st.error("Tambahkan minimal satu barang.")
         else:
             logo_path = get_pengaturan("bisnis_logo")
-            ttd_path = get_pengaturan("bisnis_ttd")
             warna_tema = get_pengaturan("tema_warna", "#1e3a8a")
             
             logo_base64 = ""
             if logo_path and os.path.exists(logo_path):
                 with open(logo_path, "rb") as image_file:
                     logo_base64 = f"data:image/png;base64,{base64.b64encode(image_file.read()).decode()}"
-            
-            ttd_base64 = ""
-            if ttd_path and os.path.exists(ttd_path):
-                with open(ttd_path, "rb") as image_file:
-                    ttd_base64 = f"data:image/png;base64,{base64.b64encode(image_file.read()).decode()}"
 
             nama_cust, telp_cust, alamat_cust = "-", "-", "-"
             if pilih_cust != "(Tanpa Customer / Umum)":
@@ -2120,105 +2315,129 @@ elif pilihan == "📄 Dokumen Bisnis":
                 alamat_cust = c_row['alamat'] or "-"
 
             rows_html = ""
+            no = 1
             for _, row in edited_df.iterrows():
-                if row["Nama Barang"] != "":
+                if row["Deskripsi Barang"] != "":
                     rows_html += f"""
                     <tr>
-                        <td style="text-align:center;">{row['Qty']}</td>
-                        <td>{row['Nama Barang']}</td>
+                        <td style="text-align:center;">{no}</td>
+                        <td>{row['Deskripsi Barang']}</td>
+                        <td style="text-align:center;">{row['Qty']} PCS</td>
                         <td style="text-align:right;">{format_rp(row['Harga Satuan'])}</td>
                         <td style="text-align:right;">{format_rp(row['Total'])}</td>
                     </tr>
                     """
+                    no += 1
 
             title_map = {
-                "Faktur / Invoice Cash": "INVOICE",
-                "Invoice Kredit": "INVOICE KREDIT",
-                "Surat Jalan (Delivery Note)": "SURAT JALAN",
-                "Surat Penawaran (Quotation)": "PENAWARAN"
+                "INVOICE": "TAX INVOICE",
+                "PROFORMA INVOICE": "PROFORMA INVOICE",
+                "PURCHASE ORDER": "PURCHASE ORDER",
+                "DELIVERY NOTE": "DELIVERY NOTE",
+                "QUOTATION": "QUOTATION"
             }
             doc_title = title_map[tipe_dokumen]
 
             html_doc = f"""
             <!DOCTYPE html>
-            <html>
+            <html lang="id">
             <head>
+            <meta charset="utf-8">
+            <title>{doc_title} - {no_dokumen}</title>
             <style>
-                body {{ font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px; }}
-                .doc-container {{ background: white; max-width: 800px; margin: auto; padding: 40px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
-                .header {{ display: flex; justify-content: space-between; border-bottom: 2px solid {warna_tema}; padding-bottom: 20px; margin-bottom: 20px; }}
+                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+                body {{ font-family: Arial, Helvetica, sans-serif; background: #f4f4f4; padding: 20px; font-size: 11px; color: #000; }}
+                .page {{ max-width: 820px; margin: 0 auto; background: #fff; padding: 40px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
+                
+                .header {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; border-bottom: 1px solid #000; padding-bottom: 15px; }}
                 .header-left {{ display: flex; gap: 15px; align-items: center; }}
-                .header-left img {{ max-height: 70px; max-width: 150px; }}
-                .company-details h1 {{ margin: 0; color: {warna_tema}; font-size: 22px; }}
-                .company-details p {{ margin: 3px 0; font-size: 12px; color: #555; }}
+                .header-left img {{ max-height: 60px; max-width: 120px; }}
+                .company-details {{ text-align: center; }}
+                .company-details h1 {{ margin: 0; font-size: 18px; font-weight: bold; }}
+                .company-details p {{ margin: 2px 0; font-size: 10px; color: #333; }}
                 .doc-title {{ text-align: right; }}
-                .doc-title h2 {{ margin: 0; color: {warna_tema}; font-size: 28px; text-transform: uppercase; }}
-                .doc-title p {{ margin: 3px 0; font-size: 13px; }}
+                .doc-title h2 {{ margin: 0; font-size: 20px; color: #1e3a8a; text-transform: uppercase; }}
                 
-                .info-grid {{ display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 13px; }}
-                .info-box h4 {{ margin: 0 0 5px 0; color: #888; text-transform: uppercase; font-size: 11px; }}
-                .info-box p {{ margin: 2px 0; }}
-                .info-box strong {{ font-size: 14px; }}
+                .info-grid {{ display: flex; justify-content: space-between; margin-bottom: 20px; }}
+                .info-box {{ width: 50%; }}
+                .info-box h4 {{ margin: 0 0 5px 0; font-size: 10px; color: #555; }}
+                .info-box p {{ margin: 2px 0; font-weight: bold; }}
+                .info-box .sub {{ font-weight: normal; color: #333; }}
                 
-                .table-data {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }}
-                .table-data th {{ background: #f0f0f0; border-bottom: 2px solid #ccc; padding: 10px; text-align: left; }}
-                .table-data td {{ padding: 10px; border-bottom: 1px solid #eee; }}
+                .doc-details {{ text-align: right; width: 50%; }}
+                .doc-details table {{ width: 100%; font-size: 11px; margin-left: auto; }}
+                .doc-details td {{ padding: 2px 0; }}
+                .doc-details .label {{ font-weight: bold; text-align: right; padding-right: 10px; }}
+                .doc-details .val {{ text-align: right; }}
                 
-                .total-box {{ background: #f9f9f9; padding: 15px; border-left: 4px solid {warna_tema}; width: 50%; margin-left: auto; font-size: 14px; margin-bottom: 30px; }}
-                .total-box .row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
-                .total-box .grand-total {{ font-weight: bold; font-size: 18px; color: {warna_tema}; border-top: 1px solid #ccc; padding-top: 5px; margin-top: 5px; }}
+                .table-data {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }}
+                .table-data th {{ background: #f0f0f0; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 8px; text-align: left; }}
+                .table-data td {{ padding: 8px; border-bottom: 1px solid #eee; }}
                 
-                .footer {{ display: flex; justify-content: space-between; margin-top: 40px; font-size: 12px; }}
+                .totals-wrap {{ display: flex; justify-content: flex-end; margin-bottom: 30px; }}
+                .totals {{ width: 50%; }}
+                .totals table {{ width: 100%; font-size: 11px; }}
+                .totals td {{ padding: 5px; text-align: right; }}
+                .totals .label {{ font-weight: bold; }}
+                .totals .grand-total {{ background: #f0f0f0; font-weight: bold; font-size: 12px; border-top: 1px solid #000; border-bottom: 1px solid #000; }}
+                
+                .footer {{ display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; }}
                 .terms {{ width: 60%; }}
+                .terms h4 {{ margin: 0 0 5px 0; font-size: 10px; }}
+                .terms p {{ margin: 0; font-size: 10px; white-space: pre-line; color: #333; }}
+                
                 .signature {{ text-align: center; width: 35%; }}
-                .signature img {{ height: 60px; margin-bottom: 5px; }}
+                .signature p {{ margin-bottom: 50px; font-weight: bold; }}
+                .signature .name {{ border-top: 1px solid #000; padding-top: 5px; font-weight: bold; font-size: 11px; }}
                 
                 @media print {{
-                    body {{ background: white; padding: 0; }}
-                    .doc-container {{ box-shadow: none; padding: 0; }}
+                    @page {{ size: A4 portrait; margin: 10mm; }}
+                    body {{ background: #fff; padding: 0; }}
+                    .page {{ box-shadow: none; padding: 0; max-width: 100%; }}
+                    * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
                 }}
             </style>
             </head>
             <body>
-                <div class="doc-container">
+                <div class="page">
                     <div class="header">
                         <div class="header-left">
                             {f'<img src="{logo_base64}" alt="Logo">' if logo_base64 else ''}
                             <div class="company-details">
-                                <h1>{get_pengaturan("bisnis_nama")}</h1>
+                                <h1>{get_pengaturan("bisnis_nama").upper()}</h1>
                                 <p>{get_pengaturan("bisnis_alamat")}</p>
                                 <p>Telp: {get_pengaturan("bisnis_telepon")} | Email: {get_pengaturan("bisnis_email")}</p>
                             </div>
                         </div>
                         <div class="doc-title">
                             <h2>{doc_title}</h2>
-                            <p><strong>No:</strong> {no_dokumen}</p>
-                            <p><strong>Tanggal:</strong> {tgl_dokumen.strftime('%d-%m-%Y')}</p>
-                            {f'<p><strong>Jatuh Tempo:</strong> {jatuh_tempo.strftime("%d-%m-%Y")}</p>' if tipe_dokumen in ["Faktur / Invoice Cash", "Invoice Kredit"] else ''}
                         </div>
                     </div>
 
                     <div class="info-grid">
                         <div class="info-box">
-                            <h4>Kepada Yth:</h4>
-                            <p><strong>{nama_cust}</strong></p>
-                            <p>{telp_cust}</p>
-                            <p>{alamat_cust}</p>
+                            <h4>DITAGIHKAN KEPADA:</h4>
+                            <p>{nama_cust.upper()}</p>
+                            <p class="sub">{alamat_cust}</p>
+                            <p class="sub">{telp_cust}</p>
                         </div>
-                        <div class="info-box" style="text-align:right;">
-                            <h4>Info Pembayaran:</h4>
-                            <p><strong>{get_pengaturan("bank_nama")}</strong></p>
-                            <p>No. Rek: {get_pengaturan("bank_rekening")}</p>
-                            <p>A/N: {get_pengaturan("bank_atas_nama")}</p>
+                        <div class="doc-details">
+                            <table>
+                                <tr><td class="label">No. Dokumen:</td><td class="val">{no_dokumen}</td></tr>
+                                <tr><td class="label">Tanggal:</td><td class="val">{tgl_dokumen.strftime('%d-%m-%Y')}</td></tr>
+                                <tr><td class="label">Jatuh Tempo:</td><td class="val">{jatuh_tempo.strftime('%d-%m-%Y')}</td></tr>
+                                <tr><td class="label">No. Referensi:</td><td class="val">REF-{datetime.now().strftime('%M%S')}</td></tr>
+                            </table>
                         </div>
                     </div>
 
                     <table class="table-data">
                         <thead>
                             <tr>
-                                <th style="width:10%; text-align:center;">QTY</th>
-                                <th style="width:50%;">DESKRIPSI BARANG</th>
-                                <th style="width:20%; text-align:right;">HARGA</th>
+                                <th style="width:5%; text-align:center;">#</th>
+                                <th style="width:45%;">DESKRIPSI</th>
+                                <th style="width:15%; text-align:center;">QTY</th>
+                                <th style="width:15%; text-align:right;">HARGA</th>
                                 <th style="width:20%; text-align:right;">TOTAL</th>
                             </tr>
                         </thead>
@@ -2227,22 +2446,44 @@ elif pilihan == "📄 Dokumen Bisnis":
                         </tbody>
                     </table>
 
-                    <div class="total-box">
-                        <div class="row grand-total">
-                            <span>GRAND TOTAL:</span>
-                            <span>{format_rp(total_semua)}</span>
+                    <div class="totals-wrap">
+                        <div class="totals">
+                            <table>
+                                <tr>
+                                    <td class="label">SUB TOTAL:</td>
+                                    <td>{format_rp(total_semua)}</td>
+                                </tr>
+                                <tr>
+                                    <td class="label">PAJAK / PPN:</td>
+                                    <td>Rp 0</td>
+                                </tr>
+                                <tr>
+                                    <td class="label">BIAYA LAIN:</td>
+                                    <td>Rp 0</td>
+                                </tr>
+                                <tr class="grand-total">
+                                    <td class="label">GRAND TOTAL:</td>
+                                    <td>{format_rp(total_semua)}</td>
+                                </tr>
+                            </table>
                         </div>
                     </div>
 
                     <div class="footer">
                         <div class="terms">
-                            <p><strong>Syarat & Ketentuan:</strong></p>
-                            <p style="white-space: pre-wrap;">{catatan_tambahan}</p>
+                            <h4>SYARAT & KETENTUAN:</h4>
+                            <p>{catatan_tambahan}</p>
+                            
+                            <br><br>
+                            <h4>INSTRUKSI PEMBAYARAN:</h4>
+                            <p><b>{get_pengaturan("bank_nama")}</b></p>
+                            <p>No. Rekening: {get_pengaturan("bank_rekening")}</p>
+                            <p>Atas Nama: {get_pengaturan("bank_atas_nama")}</p>
                         </div>
                         <div class="signature">
                             <p>Hormat Kami,</p>
-                            {f'<img src="{ttd_base64}" alt="TTD">' if ttd_base64 else '<div style="height:60px;"></div>'}
-                            <p><strong>{get_pengaturan("bisnis_nama")}</strong></p>
+                            <div class="name">{get_pengaturan("bisnis_nama").upper()}</div>
+                            <div style="font-size:9px; margin-top:3px;">Authorized Signature</div>
                         </div>
                     </div>
                 </div>
@@ -2250,17 +2491,19 @@ elif pilihan == "📄 Dokumen Bisnis":
             </html>
             """
             
-            components.html(html_doc, height=1100, scrolling=True)
-            st.info("💡 Tips: Klik tombol di bawah, lalu pada jendela print browser, pilih 'Save as PDF' dan centang 'Background Graphics'.")
-            components.html(
-                """
-                <script>
-                    window.print();
-                </script>
-                """,
-                height=0,
-            )
-elif pilihan == "⚙️ Pengaturan Owner":
+            components.html(html_doc, height=1000, scrolling=True)
+            
+            if st.button("🖨️ Cetak Dokumen / Simpan PDF"):
+                components.html(
+                    """
+                    <script>
+                        window.print();
+                    </script>
+                    """,
+                    height=0,
+                )
+                st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
+                elif pilihan == "⚙️ Pengaturan Owner":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Konfigurasi global toko dan skema kredit</p></div>', unsafe_allow_html=True)
 
     if st.session_state.role != "admin":
@@ -2493,4 +2736,3 @@ elif pilihan == "📝 Log Aktivitas":
                 st.rerun()
             except Exception as e:
                 st.error(f"Gagal menghapus log: {e}")
-                
