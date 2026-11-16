@@ -752,7 +752,7 @@ elif pilihan == "🧾 Cetak Invoice Cash":
                 height=0,
             )
             st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
-            elif pilihan == "📤 Kredit Baru":
+elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
 
     df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat, nik FROM customer ORDER BY nama", conn)
@@ -1391,7 +1391,7 @@ elif pilihan == "👥 Data Customer":
                         log_aksi(st.session_state.username, "EDIT_CUSTOMER", f"ID {customer_edit_id} -> {nama}")
                         flash(f"Data customer '{nama}' berhasil diperbarui.")
                     st.rerun()
-                    elif pilihan == "🤝 Serah Terima Barang":
+elif pilihan == "🤝 Serah Terima Barang":
     st.markdown('<div class="main-header"><h1>🤝 Serah Terima Barang</h1><p>Catat bukti serah terima unit kredit (dengan IMEI & foto)</p></div>', unsafe_allow_html=True)
 
     df_kredit_st = pd.read_sql_query("""
@@ -1773,7 +1773,7 @@ elif pilihan == "📊 Laporan & Analitik":
                 tooltip=["Kategori", "Total_Penjualan", "Total_Laba"]
             ).properties(height=350, title="Distribusi Penjualan per Kategori")
             st.altair_chart(chart_kat, use_container_width=True)
-            elif pilihan == "🏢 Profil & Tema":
+elif pilihan == "🏢 Profil & Tema":
     st.markdown('<div class="main-header"><h1>🏢 Profil & Tema</h1><p>Kustomisasi Kop Surat, Bank, dan Warna Invoice</p></div>', unsafe_allow_html=True)
     
     if st.session_state.role != "admin":
@@ -2503,7 +2503,7 @@ elif pilihan == "📄 Dokumen Bisnis":
                     height=0,
                 )
                 st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
-                elif pilihan == "⚙️ Pengaturan Owner":
+elif pilihan == "⚙️ Pengaturan Owner":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Konfigurasi global toko dan skema kredit</p></div>', unsafe_allow_html=True)
 
     if st.session_state.role != "admin":
