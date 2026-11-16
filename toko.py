@@ -724,9 +724,17 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         pilih_id = st.selectbox("Pilih ID Kredit untuk dicetak", df_kredit_cetak['id'].tolist())
         kredit_data = df_kredit_cetak[df_kredit_cetak['id'] == pilih_id].iloc[0]
 
-        # --- GENERATE NOMOR INVOICE DINAMIS (INV-1, INV-2, dst) ---
-        # Menggunakan ID Kredit sebagai nomor urut invoice
-        no_invoice = f"INV-{kredit_data['id']}"
+        # --- FITUR EDIT MANUAL SEBELUM CETAK ---
+        st.markdown("### ✏️ Kustomisasi Sebelum Cetak")
+        col_ed1, col_ed2 = st.columns(2)
+        with col_ed1:
+            # Default menggunakan ID, tapi bisa diubah manual
+            no_invoice = st.text_input("Nomor Invoice (Bisa Diedit)", value=f"INV-{kredit_data['id']}")
+        with col_ed2:
+            # Menampilkan NIK agar bisa dipastikan sesuai KTP
+            nik_tampil = st.text_input("NIK (Sesuai KTP)", value=kredit_data['nik'] or "")
+            
+        st.info(f"Pastikan data **{kredit_data['customer_nama']}** sudah benar. Jika NIK kosong, silakan isi di atas atau edit di menu Data Customer.")
 
         df_jadwal = pd.DataFrame(build_jadwal_angsuran(
             kredit_data['total_hutang'], kredit_data['cicilan_bulan'],
@@ -909,7 +917,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                         <div class="kv">
                             <div class="k">Nama</div><div class="v">{kredit_data['customer_nama']}</div>
                             <div class="k">Telepon</div><div class="v">{kredit_data['telepon'] or '-'}</div>
-                            <div class="k">NIK</div><div class="v">{kredit_data['nik'] or '-'}</div>
+                            <div class="k">NIK</div><div class="v">{nik_tampil or '-'}</div>
                             <div class="k">Alamat</div><div class="v">{kredit_data['alamat'] or '-'}</div>
                         </div>
                     </div>
@@ -1008,7 +1016,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                         <tr><td colspan="2" style="height: 5px;"></td></tr>
                         <tr>
                             <td style="vertical-align: top;"><b>PIHAK KEDUA (Debitur)</b></td>
-                            <td style="vertical-align: top; text-align: justify;">: {kredit_data['customer_nama'].upper()}, lahir di {kredit_data['alamat'].split(',')[0] if kredit_data['alamat'] else '-'} tanggal {tgl_lahir_indo}, Warga Negara Indonesia, Pekerjaan Wiraswasta, bertempat tinggal di {kredit_data['alamat'] or '-'}, Telp/WA: {kredit_data['telepon'] or '-'}. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: {kredit_data['nik'] or '-'}.</td>
+                            <td style="vertical-align: top; text-align: justify;">: {kredit_data['customer_nama'].upper()}, lahir di {kredit_data['alamat'].split(',')[0] if kredit_data['alamat'] else '-'} tanggal {tgl_lahir_indo}, Warga Negara Indonesia, Pekerjaan Wiraswasta, bertempat tinggal di {kredit_data['alamat'] or '-'}, Telp/WA: {kredit_data['telepon'] or '-'}. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: {nik_tampil or '-'}.</td>
                         </tr>
                     </table>
                     
@@ -1084,7 +1092,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                         </div>
                         
                         <div class="sig-name-underline">{kredit_data['customer_nama'].upper()}</div>
-                        <div class="sig-nik">Pemegang KTP NIK: {kredit_data['nik'] or '-'}</div>
+                        <div class="sig-nik">Pemegang KTP NIK: {nik_tampil or '-'}</div>
                     </div>
                 </div>
             </div>
@@ -1113,7 +1121,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         """
         
         components.html(html_slip, height=1600, scrolling=True)
-
 
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
