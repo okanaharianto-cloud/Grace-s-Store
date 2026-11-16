@@ -94,25 +94,33 @@ c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nila
 c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
 conn.commit()
 
-# ==================== MIGRASI KOLOM ====================
-for sql in [
-    "ALTER TABLE produk ADD COLUMN markup_persen REAL DEFAULT 5.0",
-    "ALTER TABLE produk ADD COLUMN harga_jual REAL",
-    "ALTER TABLE transaksi_cash ADD COLUMN harga_jual_satuan REAL DEFAULT 0",
-    "ALTER TABLE transaksi_cash ADD COLUMN laba REAL DEFAULT 0",
-    "ALTER TABLE kredit ADD COLUMN tanggal_kredit TEXT",
-    "ALTER TABLE kredit ADD COLUMN updated_at TEXT",
-    "ALTER TABLE kredit ADD COLUMN updated_by TEXT",
-    "ALTER TABLE customer ADD COLUMN nik TEXT",
-    "ALTER TABLE customer ADD COLUMN tanggal_lahir TEXT",
-    "ALTER TABLE customer ADD COLUMN status_kawin TEXT",
-    "ALTER TABLE customer ADD COLUMN foto_ktp TEXT",
-    "ALTER TABLE customer ADD COLUMN foto_kk TEXT"
-]:
+# ==================== MIGRASI KOLOM (AMAN DARI SYSTEMERROR) ====================
+def add_column_if_not_exists(table, column, definition):
     try:
-        c.execute(sql); conn.commit()
-    except sqlite3.OperationalError:
+        c.execute(f"PRAGMA table_info({table})")
+        columns = [info[1] for info in c.fetchall()]
+        if column not in columns:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            conn.commit()
+    except Exception:
         pass
+
+migrasi_list = [
+    ("produk", "markup_persen", "REAL DEFAULT 5.0"),
+    ("produk", "harga_jual", "REAL"),
+    ("transaksi_cash", "harga_jual_satuan", "REAL DEFAULT 0"),
+    ("transaksi_cash", "laba", "REAL DEFAULT 0"),
+    ("kredit", "tanggal_kredit", "TEXT"),
+    ("kredit", "updated_at", "TEXT"),
+    ("kredit", "updated_by", "TEXT"),
+    ("customer", "nik", "TEXT"),
+    ("customer", "tanggal_lahir", "TEXT"),
+    ("customer", "status_kawin", "TEXT"),
+    ("customer", "foto_ktp", "TEXT"),
+    ("customer", "foto_kk", "TEXT")
+]
+for tbl, col, defn in migrasi_list:
+    add_column_if_not_exists(tbl, col, defn)
 
 try:
     c.execute("UPDATE kredit SET tanggal_kredit = date(jatuh_tempo, '-30 days') WHERE tanggal_kredit IS NULL")
@@ -127,7 +135,6 @@ DEFAULT_PENGATURAN = {
     "dp_minimal_persen":         ("20.0",  "DP minimal (%) dari harga cash"),
     "denda_per_hari_persen":     ("0.4",   "Denda keterlambatan per hari (%) dari cicilan"),
     "tenor_options":             ("1,2,3,6,12,18,24", "Pilihan tenor (bulan), pisahkan dengan koma"),
-    # Profil Default untuk Invoice
     "bisnis_nama":               ("GRACE'S ELECTRONIC", "Nama Perusahaan"),
     "bisnis_alamat":             ("Sekolah Darat RT 007 RW 000, Kutai Barat, Kalimantan Timur", "Alamat Perusahaan"),
     "bisnis_telepon":            ("0822-9954-8411", "Telepon Perusahaan"),
@@ -585,7 +592,6 @@ elif pilihan == "🧾 Cetak Invoice Cash":
 
         tgl_trx = format_tgl_indo(trx_data['tanggal'])
 
-        # HTML & CSS dengan integrasi JsBarcode
         html_cash = f"""
         <!DOCTYPE html>
         <html lang="id">
@@ -782,8 +788,7 @@ elif pilihan == "🧾 Cetak Invoice Cash":
                 height=0,
             )
             st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
-
-elif pilihan == "📤 Kredit Baru":
+            elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
 
     df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat, nik FROM customer ORDER BY nama", conn)
@@ -1422,7 +1427,7 @@ elif pilihan == "👥 Data Customer":
                         log_aksi(st.session_state.username, "EDIT_CUSTOMER", f"ID {customer_edit_id} -> {nama}")
                         flash(f"Data customer '{nama}' berhasil diperbarui.")
                     st.rerun()
-elif pilihan == "🤝 Serah Terima Barang":
+                    elif pilihan == "🤝 Serah Terima Barang":
     st.markdown('<div class="main-header"><h1>🤝 Serah Terima Barang</h1><p>Catat bukti serah terima unit kredit (dengan IMEI & foto)</p></div>', unsafe_allow_html=True)
 
     df_kredit_st = pd.read_sql_query("""
@@ -1804,7 +1809,7 @@ elif pilihan == "📊 Laporan & Analitik":
                 tooltip=["Kategori", "Total_Penjualan", "Total_Laba"]
             ).properties(height=350, title="Distribusi Penjualan per Kategori")
             st.altair_chart(chart_kat, use_container_width=True)
-elif pilihan == "🏢 Profil & Tema":
+            elif pilihan == "🏢 Profil & Tema":
     st.markdown('<div class="main-header"><h1>🏢 Profil & Tema</h1><p>Kustomisasi Kop Surat, Bank, dan Warna Invoice</p></div>', unsafe_allow_html=True)
     
     if st.session_state.role != "admin":
@@ -2534,7 +2539,7 @@ elif pilihan == "📄 Dokumen Bisnis":
                     height=0,
                 )
                 st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
-elif pilihan == "⚙️ Pengaturan Owner":
+                elif pilihan == "⚙️ Pengaturan Owner":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Konfigurasi global toko dan skema kredit</p></div>', unsafe_allow_html=True)
 
     if st.session_state.role != "admin":
