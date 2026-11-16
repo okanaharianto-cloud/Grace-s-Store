@@ -747,11 +747,18 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         cicilan = kredit_data['cicilan_bulan']
         total_bulan_terakhir = cicilan + biaya_materai
         
+        # Build Table Rows
         jadwal_rows = ""
         for _, row in df_jadwal.iterrows():
-            jadwal_rows += f"<tr><td class='c'>{row['ke']}</td><td>{row['jatuh_tempo']}</td><td class='r'>{format_rp(row['angsuran'])}</td><td class='c'><span class='status-pending'>BELUM</span></td></tr>"
+            jadwal_rows += f"""
+            <tr>
+                <td class="c">{row['ke']}</td>
+                <td>{row['jatuh_tempo']}</td>
+                <td class="r">{format_rp(row['angsuran'])}</td>
+                <td class="c"><span class="status-badge">BELUM</span></td>
+            </tr>"""
 
-        # Build HTML (menggunakan styling dari file yang dilampirkan)
+        # Build HTML
         html_slip = f"""
         <!DOCTYPE html>
         <html lang="id">
@@ -764,15 +771,14 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #e2e8f0; padding: 20px 10px; color: #1a2b47; font-size: 11px; }}
             .page {{ max-width: 820px; margin: 0 auto; background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,0.15); margin-bottom: 20px; }}
             
-            /* Tombol Print - Fixed di atas */
+            /* Tombol Print */
             .btn-print-wrap {{ position: sticky; top: 0; z-index: 9999; background: #e2e8f0; padding: 10px 0; text-align: center; }}
-            .btn-print {{ background-color: #667eea; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; max-width: 820px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-            .btn-print:hover {{ background-color: #764ba2; }}
+            .btn-print {{ background-color: #1e3a8a; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; max-width: 820px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            .btn-print:hover {{ background-color: #2563eb; }}
 
             /* HEADER */
             .hdr {{ background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 70%, #1e40af 100%); color: #fff; padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }}
             .hdr::before {{ content:''; position:absolute; top:-50%; right:-5%; width:220px; height:220px; background: radial-gradient(circle, rgba(16,185,129,0.3), transparent 70%); border-radius:50%; }}
-            .hdr::after {{ content:''; position:absolute; bottom:-70%; right:15%; width:180px; height:180px; background: radial-gradient(circle, rgba(245,158,11,0.25), transparent 70%); border-radius:50%; }}
             .brand {{ position: relative; z-index:1; }}
             .brand h1 {{ font-size: 19px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
             .brand .tag {{ font-size: 9.5px; color: #94a3b8; letter-spacing: 0.4px; margin-top: 1px; }}
@@ -787,96 +793,85 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             .meta b {{ color: #0f172a; }}
 
             /* BODY */
-            .body {{ padding: 10px 22px 12px; }}
+            .body {{ padding: 15px 22px 20px; }}
 
             /* TOP 2-COLUMN */
-            .top-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }}
+            .top-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }}
             .sec {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }}
             .sec-title {{ font-size: 9.5px; font-weight: 800; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.6px; padding-bottom: 4px; margin-bottom: 5px; border-bottom: 1.5px solid #f1f5f9; display: flex; align-items: center; gap: 5px; }}
             .sec-title span.ic {{ display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; background: linear-gradient(135deg,#1e3a8a,#1e40af); color: #fff; border-radius: 4px; font-size: 9px; }}
-            .kv {{ display: grid; grid-template-columns: 68px 1fr; gap: 3px 6px; font-size: 10px; }}
+            .kv {{ display: grid; grid-template-columns: 60px 1fr; gap: 3px 6px; font-size: 10px; }}
             .kv .k {{ color: #64748b; }}
             .kv .v {{ color: #0f172a; font-weight: 600; }}
 
-            /* SUMMARY ROW */
-            .summary {{ display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 8px; }}
-            .sum-card {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; text-align: center; }}
+            /* SUMMARY CARDS (DP & ANGSURAN) */
+            .summary-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }}
+            .sum-card {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; text-align: center; }}
             .sum-card.green {{ background: #ecfdf5; border-color: #a7f3d0; }}
-            .sum-card.blue {{ background: #eff6ff; border-color: #bfdbfe; }}
             .sum-card.amber {{ background: #fffbeb; border-color: #fde68a; }}
-            .sum-card .lbl {{ font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }}
-            .sum-card .val {{ font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 2px; }}
+            .sum-card .lbl {{ font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }}
+            .sum-card .val {{ font-size: 14px; font-weight: 800; margin-top: 2px; }}
             .sum-card.green .val {{ color: #065f46; }}
-            .sum-card.blue .val {{ color: #1e40af; }}
             .sum-card.amber .val {{ color: #92400e; }}
 
-            /* OPTIONS TABLE */
-            .tenor-options {{ display: grid; gap: 8px; margin-bottom: 8px; }}
-            .tenor-card {{ position: relative; border: 1.5px solid #d1d5db; border-radius: 8px; padding: 10px 14px; }}
-            .tenor-card.recommended {{ border-color: #1e3a8a; }}
-            .tenor-card.recommended::before {{ content: 'REKOMENDASI'; position: absolute; top: -1.5px; right: -1.5px; background: #b8956a; color: #fff; font-size: 7.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; border-radius: 0 6px 0 6px; }}
-            .tc-label {{ font-size: 9px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }}
-            .tc-title {{ font-family: Georgia, serif; font-size: 14px; font-weight: 700; color: #1a2b47; margin: 2px 0 6px; }}
-            .tc-row {{ display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; }}
-            .tc-row .k {{ color: #6b7280; }}
-            .tc-row .v {{ color: #1a2b47; font-weight: 600; }}
-            .tc-row.main {{ border-top: 1px solid #e5e7eb; padding-top: 4px; margin-top: 2px; }}
-            .tc-row.main .k {{ font-weight: 700; color: #1a2b47; }}
-            .tc-row.main .v {{ font-size: 13px; font-weight: 700; color: #b8956a; }}
-
-            /* SCHEDULE 2-COLUMN */
-            .sched-wrap {{ display: grid; gap: 8px; margin-bottom: 8px; }}
-            .sched {{ border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }}
-            .sched-h {{ padding: 5px 8px; font-size: 9px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; }}
-            .sched-h.two {{ background: linear-gradient(90deg, #1e40af, #2563eb); }}
-            .sched table {{ width: 100%; border-collapse: collapse; font-size: 9.5px; }}
-            .sched th {{ background: #f8fafc; color: #475569; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.3px; padding: 4px 6px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
-            .sched td {{ padding: 4px 6px; border-bottom: 1px solid #f1f5f9; }}
-            .sched tr:last-child td {{ border-bottom: none; }}
+            /* SCHEDULE TABLE */
+            .sched {{ border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 10px; }}
+            .sched-h {{ padding: 6px 10px; font-size: 10px; font-weight: 800; color: #fff; background: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; }}
+            .sched table {{ width: 100%; border-collapse: collapse; font-size: 10px; }}
+            .sched th {{ background: #f8fafc; color: #475569; font-size: 9px; padding: 6px 8px; text-align: left; border-bottom: 2px solid #cbd5e1; border-right: 1px solid #e2e8f0; }}
+            .sched th:last-child {{ border-right: none; }}
+            .sched td {{ padding: 6px 8px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; }}
+            .sched td:last-child {{ border-right: none; }}
             .sched .r {{ text-align: right; }}
             .sched .c {{ text-align: center; }}
-            .sched .total td {{ background: #f8fafc; font-weight: 700; }}
-            .status-pending {{ display: inline-block; padding: 1px 6px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 8px; font-weight: 700; }}
+            .sched .total-row td {{ background: #f1f5f9; font-weight: bold; color: #1e3a8a; border-top: 2px solid #cbd5e1; }}
+            .status-badge {{ display: inline-block; padding: 1px 6px; border-radius: 8px; background: #fef3c7; color: #92400e; font-size: 8px; font-weight: 700; }}
+
+            /* CATATAN & WARNING */
+            .catatan {{ font-size: 9px; color: #475569; margin-bottom: 12px; line-height: 1.4; }}
+            .transfer-box {{ border: 1px dashed #3b82f6; background: #eff6ff; padding: 10px; text-align: center; border-radius: 8px; margin-bottom: 12px; font-size: 10px; color: #1e3a8a; }}
+            .warning-box {{ background: #fff1f2; border: 1px solid #f43f5e; padding: 10px; border-radius: 8px; margin-bottom: 15px; }}
+            .warning-title {{ color: #be123c; font-weight: bold; font-size: 10px; margin-bottom: 4px; text-transform: uppercase; }}
+            .warning-text {{ font-size: 9px; color: #000; line-height: 1.4; text-align: justify; }}
 
             /* PERJANJIAN OJK */
             .agreement-container {{ background: #ffffff; border: 2px solid #000000; padding: 20px; margin-top: 15px; margin-bottom: 15px; font-family: 'Times New Roman', Times, serif; font-size: 10.5px; color: #000000; line-height: 1.6; }}
             .agreement-title {{ text-align: center; font-weight: bold; font-size: 12px; text-decoration: underline; margin-bottom: 4px; }}
             .agreement-number {{ text-align: center; font-weight: bold; margin-bottom: 15px; }}
-            .agreement-table {{ width: 100%; margin-bottom: 15px; }}
-            .agreement-articles {{ margin-top: 10px; }}
             .agreement-articles b {{ display: block; margin-top: 10px; margin-bottom: 4px; font-size: 11px; }}
             .agreement-articles p {{ margin-bottom: 4px; text-align: justify; }}
 
-            /* SIGNATURE & MATERAI */
-            .signature-area {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }}
-            .sig-box {{ border: 1px solid #000; border-radius: 8px; padding: 15px; text-align: center; position: relative; }}
-            .sig-title {{ font-size: 10px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }}
-            .sig-space {{ height: 100px; display: flex; align-items: center; justify-content: center; position: relative; }}
-            .sig-name {{ font-size: 11px; font-weight: bold; text-decoration: underline; margin-top: 10px; }}
-            .sig-verify {{ font-size: 8.5px; color: #555; margin-top: 2px; }}
+            /* SIGNATURE AREA (SESUAI GAMBAR 2) */
+            .signature-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px; }}
+            .sig-box {{ text-align: center; position: relative; }}
+            .sig-title {{ font-size: 10px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }}
             
-            .customer-ttd {{ font-family: 'Brush Script MT', 'Segoe Script', cursive; font-size: 28px; color: #1e3a8a; transform: rotate(-5deg); opacity: 0.8; }}
-
-            /* TERMS & FOOTER */
-            .terms-section {{ padding: 10px 22px; background: #f9fafb; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; margin-top: 15px; }}
-            .terms-title {{ font-family: Georgia, serif; font-size: 9px; font-weight: 700; color: #1a2b47; letter-spacing: 1.4px; text-transform: uppercase; margin-bottom: 4px; }}
-            .terms-list {{ counter-reset: item; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 20px; font-size: 9px; color: #4b5563; }}
-            .terms-list li {{ display: flex; gap: 6px; line-height: 1.5; }}
-            .terms-list li::before {{ counter-increment: item; content: counter(item); font-weight: 700; color: #b8956a; flex-shrink: 0; }}
-            .footer {{ padding: 8px 22px 12px; text-align: center; font-size: 8.5px; color: #9ca3af; line-height: 1.6; }}
-            .footer-brand {{ font-family: Georgia, serif; font-size: 9.5px; color: #1a2b47; font-weight: 700; letter-spacing: 0.8px; }}
+            /* Kreditur Box */
+            .sig-box-kreditur {{ border: 1px solid #93c5fd; background: #eff6ff; border-radius: 8px; padding: 15px; position: relative; margin-bottom: 10px; }}
+            .cert-badge {{ display: flex; align-items: center; justify-content: center; gap: 5px; color: #0284c7; font-size: 10px; font-weight: bold; margin-bottom: 5px; }}
+            .cert-badge svg {{ width: 14px; height: 14px; fill: currentColor; }}
+            .sig-name-bold {{ font-weight: bold; font-size: 11px; margin-bottom: 3px; }}
+            .sig-sub {{ font-size: 9px; color: #64748b; line-height: 1.3; margin-bottom: 10px; }}
+            
+            /* Debitur Box */
+            .sig-box-debitur {{ border: 1px dashed #94a3b8; background: #f8fafc; border-radius: 8px; padding: 15px; position: relative; margin-bottom: 10px; }}
+            .emeterai-wrap {{ display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60px; margin-bottom: 5px; }}
+            
+            /* Visual E-Meterai */
+            .emeterai {{ width: 60px; height: 35px; background: linear-gradient(135deg, #a855f7, #6b21a8); border-radius: 4px; border: 2px solid #d8b4fe; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }}
+            .emeterai-logo {{ font-size: 10px; line-height: 1; }}
+            .emeterai-text {{ font-size: 5px; letter-spacing: 0.5px; font-weight: bold; }}
+            .emeterai-val {{ font-size: 10px; font-weight: 900; }}
+            
+            .sig-name-underline {{ font-weight: bold; font-size: 11px; text-decoration: underline; margin-top: 10px; }}
+            .sig-nik {{ font-size: 9px; color: #334155; margin-top: 3px; }}
 
             @media print {{
-                @page {{ size: A4 portrait; margin: 6mm; }}
-                body {{ background: #fff; padding: 0; margin: 0; font-size: 9px; }}
+                @page {{ size: A4 portrait; margin: 10mm; }}
+                body {{ background: #fff; padding: 0; margin: 0; font-size: 10px; }}
                 .btn-print-wrap {{ display: none !important; }}
                 .page {{ box-shadow: none; border-radius: 0; max-width: 100%; width: 100%; border: none; margin-bottom: 0; }}
                 .page:nth-child(2) {{ page-break-before: always; }}
-                .hdr {{ padding: 10px 16px; }}
-                .body {{ padding: 6px 16px 8px; }}
-                .meta {{ padding: 4px 16px; }}
-                .terms-section {{ padding: 8px 16px; }}
-                .footer {{ padding: 5px 16px; }}
                 * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
             }}
         </style>
@@ -898,7 +893,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <div class="title-box">
                     <div class="badge-inv">Invoice Kredit</div>
                     <div class="inv-no">#GRC-INV-{kredit_data['id']}</div>
-                    <div class="inv-date">{tgl_kredit_indo} · {datetime.now().strftime('%H:%M')} WITA</div>
+                    <div class="inv-date">{tgl_kredit_indo}</div>
                 </div>
             </header>
 
@@ -911,15 +906,16 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <!-- Customer + Product -->
                 <div class="top-grid">
                     <div class="sec">
-                        <div class="sec-title"><span class="ic">👤</span> Customer</div>
+                        <div class="sec-title"><span class="ic">👤</span> DATA CUSTOMER</div>
                         <div class="kv">
                             <div class="k">Nama</div><div class="v">{kredit_data['customer_nama']}</div>
                             <div class="k">Telepon</div><div class="v">{kredit_data['telepon'] or '-'}</div>
+                            <div class="k">NIK</div><div class="v">{kredit_data['nik'] or '-'}</div>
                             <div class="k">Alamat</div><div class="v">{kredit_data['alamat'] or '-'}</div>
                         </div>
                     </div>
                     <div class="sec">
-                        <div class="sec-title"><span class="ic">📱</span> Produk</div>
+                        <div class="sec-title"><span class="ic">📱</span> DETAIL PRODUK</div>
                         <div class="kv">
                             <div class="k">Nama</div><div class="v">{kredit_data['produk_nama']}</div>
                             <div class="k">SKU</div><div class="v">GRC-{kredit_data['id']:02d}</div>
@@ -928,48 +924,61 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     </div>
                 </div>
 
-                <!-- Summary Cards -->
-                <div class="summary">
-                    <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(kredit_data['dp'])}</div></div>
-                </div>
-
-                <!-- Pilihan Tenor -->
-                <div class="tenor-options">
-                    <div class="tenor-card recommended">
-                        <div class="tc-label">Tenor Dipilih</div>
-                        <div class="tc-title">Tenor {kredit_data['tenor']}× ({kredit_data['tenor']} Bulan)</div>
-                        <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(kredit_data['cicilan_bulan'])}</span></div>
+                <!-- Summary Cards (DP & Angsuran) -->
+                <div class="summary-grid">
+                    <div class="sum-card green">
+                        <div class="lbl">DP DIBAYAR</div>
+                        <div class="val">{format_rp(kredit_data['dp'])}</div>
+                    </div>
+                    <div class="sum-card amber">
+                        <div class="lbl">ANGSURAN / BULAN</div>
+                        <div class="val">{format_rp(kredit_data['cicilan_bulan'])}</div>
                     </div>
                 </div>
 
                 <!-- Jadwal Angsuran -->
-                <div class="sched-wrap">
-                    <div class="sched">
-                        <div class="sched-h two">📅 Jadwal Angsuran — Tenor {kredit_data['tenor']}×</div>
-                        <table>
-                            <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="c">Status</th></tr></thead>
-                            <tbody>
-                                {jadwal_rows}
-                            </tbody>
-                        </table>
-                    </div>
+                <div class="sched">
+                    <div class="sched-h">Jadwal Angsuran — {kredit_data['tenor']} Bulan</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="c" style="width:30px;">KE</th>
+                                <th>JATUH TEMPO</th>
+                                <th class="r">NOMINAL</th>
+                                <th class="c">STATUS</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {jadwal_rows}
+                            <tr class="total-row">
+                                <td colspan="2" class="c">TOTAL ANGSURAN</td>
+                                <td class="r">{format_rp(kredit_data['total_hutang'])}</td>
+                                <td class="c">—</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
-                <p style="font-size: 9px; color: #475569; margin-top: 5px;">*Catatan: Terdapat Biaya Administrasi/Materai sebesar {format_rp(biaya_materai)} (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir (ke-{kredit_data['tenor']}). Total yang disetor pada bulan ke-{kredit_data['tenor']} adalah {format_rp(total_bulan_terakhir)}.</p>
                 
-                <div class="terms-section" style="margin-top: 10px;">
-                    <div class="terms-title">PEMBAYARAN TRANSFER RESMI</div>
-                    <div style="font-size: 10px; font-weight: bold; margin-bottom: 5px;">Bank Mandiri: 148-00-2889246-4</div>
-                    <div style="font-size: 10px;">a.n. CV GRACE HAVEN TRANSPORT</div>
+                <div class="catatan">
+                    *Catatan: Terdapat Biaya Administrasi/Materai sebesar {format_rp(biaya_materai)} (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir (ke-{kredit_data['tenor']}). Total yang disetor pada bulan ke-{kredit_data['tenor']} adalah {format_rp(total_bulan_terakhir)}.
+                </div>
+                
+                <!-- Transfer Box -->
+                <div class="transfer-box">
+                    <div style="font-weight: bold; margin-bottom: 3px;">PEMBAYARAN TRANSFER RESMI</div>
+                    <div style="font-size: 14px; font-weight: bold; letter-spacing: 1px;">Bank Mandiri: 148-00-2889246-4</div>
+                    <div style="font-weight: 600;">a.n. CV GRACE HAVEN TRANSPORT</div>
                 </div>
 
-                <div class="agreement-container" style="border: 1px solid #f43f5e; background: #fff1f2; padding: 10px; margin-top: 15px;">
-                    <b style="color: #be123c; display: block; margin-bottom: 3px; font-family: Arial; text-transform: uppercase; font-size: 10px;">PENTING - KONSEKUENSI MANGKIR</b>
-                    <p style="font-family: Arial; font-size: 9px; color: #000; line-height: 1.4;">Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking. Hal ini mengakibatkan Debitur masuk dalam daftar hitam (blacklist) yang akan menyulitkan Debitur untuk mengajukan pinjaman/kredit di lembaga keuangan manapun di kemudian hari.</p>
+                <!-- Peringatan Merah -->
+                <div class="warning-box">
+                    <div class="warning-title">PENTING - KONSEKUENSI MANGKIR</div>
+                    <div class="warning-text">Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking. Hal ini mengakibatkan Debitur masuk dalam daftar hitam (blacklist) yang akan menyulitkan Debitur untuk mengajukan pinjaman/kredit di lembaga keuangan manapun di kemudian hari.</div>
                 </div>
             </div>
 
-            <footer class="footer">
-                <div class="footer-brand">GRACE'S ELECTRONIC</div>
+            <footer class="footer" style="padding: 8px 22px 12px; text-align: center; font-size: 8.5px; color: #9ca3af; line-height: 1.6; border-top: 1px solid #e5e7eb;">
+                <div style="font-family: Georgia, serif; font-size: 9.5px; color: #1a2b47; font-weight: 700; letter-spacing: 0.8px;">GRACE'S ELECTRONIC</div>
                 <div>Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan untuk pembayaran berikutnya.</div>
             </footer>
         </div>
@@ -996,7 +1005,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     
                     <p>Pada hari ini, <b>{tgl_kredit_indo}</b>, yang bertanda tangan di bawah ini:</p>
                     
-                    <table class="agreement-table">
+                    <table style="width: 100%; margin-bottom: 15px; font-size: 10.5px;">
                         <tr>
                             <td style="width: 150px; vertical-align: top;"><b>PIHAK PERTAMA (Kreditur)</b></td>
                             <td style="vertical-align: top;">: CV. GRACE HAVEN TRANSPORT (Grace's Electronic), berkedudukan di Sekolaq Darat RT 007 RW 000, Kelurahan/Desa Sekolaq Darat, Kecamatan Sekolaq Darat, Kabupaten Kutai Barat, Provinsi Kalimantan Timur. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh ADI HARIANTO, S.E. selaku Direktur.</td>
@@ -1037,28 +1046,49 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     </div>
                 </div>
                 
-                <div class="signature-area">
+                <!-- SIGNATURE AREA -->
+                <div class="signature-grid">
+                    <!-- Pihak Pertama (Kreditur) -->
                     <div class="sig-box">
                         <div class="sig-title">PIHAK PERTAMA (KREDITUR)</div>
-                        <div class="sig-space">
-                            <svg id="signatureBarcode"></svg>
+                        
+                        <div class="sig-box-kreditur">
+                            <div class="cert-badge">
+                                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                                TERSERTIFIKASI
+                            </div>
+                            <div class="sig-name-bold">ADI HARIANTO, S.E.</div>
+                            <div class="sig-sub">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
+                            <svg id="signatureBarcode" style="margin-top: 5px;"></svg>
                         </div>
-                        <div class="sig-name">ADI HARIANTO, S.E.</div>
-                        <div class="sig-verify">Direktur CV. Grace Haven Transport</div>
+                        
+                        <div class="sig-name-underline">ADI HARIANTO, S.E.</div>
+                        <div class="sig-sub" style="margin-top: 2px;">Direktur CV. Grace Haven Transport</div>
                     </div>
+                    
+                    <!-- Pihak Kedua (Debitur) -->
                     <div class="sig-box">
                         <div class="sig-title">PIHAK KEDUA (DEBITUR)</div>
-                        <div class="sig-space">
-                            <div class="customer-ttd">{kredit_data['customer_nama']}</div>
+                        
+                        <div class="sig-box-debitur">
+                            <div class="emeterai-wrap">
+                                <div class="emeterai">
+                                    <div class="emeterai-logo">🦅</div>
+                                    <div class="emeterai-text">METERAI TEMPEL</div>
+                                    <div class="emeterai-val">10000</div>
+                                </div>
+                            </div>
+                            <div class="sig-sub">(Tempel e-Meterai / TTD Basah)</div>
                         </div>
-                        <div class="sig-name">( {kredit_data['customer_nama']} )</div>
-                        <div class="sig-verify">Pemegang KTP NIK: {kredit_data['nik'] or '-'}</div>
+                        
+                        <div class="sig-name-underline">{kredit_data['customer_nama'].upper()}</div>
+                        <div class="sig-nik">Pemegang KTP NIK: {kredit_data['nik'] or '-'}</div>
                     </div>
                 </div>
             </div>
             
-            <footer class="footer">
-                <div class="footer-brand">GRACE'S ELECTRONIC</div>
+            <footer class="footer" style="padding: 8px 22px 12px; text-align: center; font-size: 8.5px; color: #9ca3af; line-height: 1.6; border-top: 1px solid #e5e7eb;">
+                <div style="font-family: Georgia, serif; font-size: 9.5px; color: #1a2b47; font-weight: 700; letter-spacing: 0.8px;">GRACE'S ELECTRONIC</div>
                 <div>Dokumen ini sah dan mengikat secara hukum.</div>
             </footer>
         </div>
@@ -1067,12 +1097,12 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             window.onload = function() {{
                 JsBarcode("#signatureBarcode", "GRC-{kredit_data['id']}-TN", {{
                     format: "CODE128",
-                    width: 1.2,
-                    height: 34,
+                    width: 1.5,
+                    height: 35,
                     displayValue: false,
                     margin: 0,
-                    lineColor: "#1a2b47",
-                    background: "#ffffff"
+                    lineColor: "#1e3a8a",
+                    background: "transparent"
                 }});
             }};
         </script>
@@ -1081,6 +1111,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         """
         
         components.html(html_slip, height=1600, scrolling=True)
+
 
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
