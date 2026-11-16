@@ -5,8 +5,8 @@ import hashlib
 import os
 import shutil
 import uuid
+import base64
 from datetime import datetime, timedelta
-from urllib.parse import quote
 import altair as alt
 import streamlit.components.v1 as components
 import io
@@ -58,14 +58,10 @@ st.markdown("""
 # ==================== KONSTANTA ====================
 PAKAIAN_KATEGORI = ["Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik"]
 SEMUA_KATEGORI = ["Gadget", "Elektronik", "Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik", "Furnitur", "Motor", "Lainnya"]
-ALAMAT_TOKO = "Jl. Barong Tongkok, Kutai Barat"
 UPLOAD_DIR = "uploads"
 
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
-
-def is_pakaian(kat):
-    return kat in PAKAIAN_KATEGORI
 
 # ==================== KONEKSI DATABASE ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -74,13 +70,6 @@ BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 
 if not os.path.exists(BACKUP_DIR):
     os.makedirs(BACKUP_DIR)
-    
-backup_file = os.path.join(BACKUP_DIR, f"backup_{datetime.now().strftime('%Y%m%d')}.db")
-if os.path.exists(DB_PATH) and not os.path.exists(backup_file):
-    try:
-        shutil.copy2(DB_PATH, backup_file)
-    except Exception:
-        pass
 
 @st.cache_resource
 def get_connection():
@@ -102,7 +91,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS pembayaran (id INTEGER PRIMARY KEY AUTOI
 c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
 c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
 c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
 conn.commit()
 
@@ -139,6 +127,17 @@ DEFAULT_PENGATURAN = {
     "dp_minimal_persen":         ("20.0",  "DP minimal (%) dari harga cash"),
     "denda_per_hari_persen":     ("0.4",   "Denda keterlambatan per hari (%) dari cicilan"),
     "tenor_options":             ("1,2,3,6,12,18,24", "Pilihan tenor (bulan), pisahkan dengan koma"),
+    # Profil Default untuk Invoice
+    "bisnis_nama":               ("GRACE'S ELECTRONIC", "Nama Perusahaan"),
+    "bisnis_alamat":             ("Sekolah Darat RT 007 RW 000, Kutai Barat, Kalimantan Timur", "Alamat Perusahaan"),
+    "bisnis_telepon":            ("0822-9954-8411", "Telepon Perusahaan"),
+    "bisnis_email":              ("gracehaven.transport@gmail.com", "Email Perusahaan"),
+    "bank_nama":                 ("Bank Mandiri", "Nama Bank"),
+    "bank_rekening":             ("148-00-2889246-4", "Nomor Rekening"),
+    "bank_atas_nama":            ("CV GRACE HAVEN TRANSPORT", "Atas Nama Rekening"),
+    "tema_warna":                ("#1e3a8a", "Warna Tema Dokumen (Hex)"),
+    "bisnis_logo":               ("", "Path file Logo"),
+    "bisnis_ttd":                ("", "Path file Tanda Tangan"),
 }
 for k, (v, ket) in DEFAULT_PENGATURAN.items():
     c.execute("INSERT OR IGNORE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)", (k, v, ket))
@@ -201,8 +200,6 @@ def show_flash():
         st.session_state.flash = None
     if st.session_state.get("balloons"):
         st.balloons(); st.session_state.balloons = False
-    if st.session_state.get("snow"):
-        st.snow(); st.session_state.snow = False
 
 def hitung_harga_cash(harga_modal, markup_persen, harga_jual):
     if harga_jual and float(harga_jual) > 0:
@@ -245,82 +242,20 @@ def build_jadwal_angsuran(total_hutang, cicilan_bulan, tenor, tanggal_kredit_str
         schedule.append({"ke": i, "jatuh_tempo": tgl.strftime("%d-%m-%Y"), "angsuran": bayar, "sisa": sisa})
     return schedule
 
-def get_schedule_for_invoice(kredit_id, opsi, total, cicilan, tenor, tgl_str):
-    df_custom = pd.read_sql_query("SELECT ke, jatuh_tempo, angsuran, sisa FROM jadwal_kustom WHERE kredit_id=? AND opsi=? ORDER BY ke", conn, params=(kredit_id, opsi))
-    if not df_custom.empty:
-        return df_custom
-    else:
-        return pd.DataFrame(build_jadwal_angsuran(total, cicilan, tenor, tgl_str))
-
 def save_uploaded_file(uploaded_file, prefix):
     if uploaded_file is not None:
-        file_path = os.path.join(UPLOAD_DIR, f"{prefix}_{uuid.uuid4().hex[:8]}.jpg")
+        ext = uploaded_file.name.split('.')[-1].lower()
+        file_path = os.path.join(UPLOAD_DIR, f"{prefix}_{uuid.uuid4().hex[:8]}.{ext}")
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         return file_path
     return None
 
+# Seed admin
 c.execute("SELECT COUNT(*) FROM users")
 if c.fetchone()[0] == 0:
     c.execute("INSERT INTO users (username, password, nama_lengkap, role) VALUES (?,?,?,?)", ("admin", hash_password("admin123"), "Administrator", "admin"))
     conn.commit()
-
-# ==================== SEED DATA ====================
-def tanam_data_brosur():
-    c.execute("SELECT COUNT(*) FROM produk")
-    if c.fetchone()[0] == 0:
-        data = [
-            ("iPhone 17 256GB", "Gadget", 19046700, 10), ("iPhone 17 512GB", "Gadget", 22141900, 10),
-            ("iPhone 17 PRO 256GB", "Gadget", 20951400, 10), ("iPhone 17 PRO 512GB", "Gadget", 25237100, 10),
-            ("iPhone 17 PRO 1TB", "Gadget", 29761000, 10), ("iPhone 17 PRO MAX 256GB", "Gadget", 22856200, 10),
-            ("iPhone 17 PRO MAX 512GB", "Gadget", 27141900, 10), ("iPhone 17 PRO MAX 1TB", "Gadget", 31427600, 10),
-            ("iPhone 17 PRO MAX 2TB", "Gadget", 40237100, 10), ("iPhone 17 AIR 256GB", "Gadget", 15951400, 10),
-            ("iPhone 17 AIR 512GB", "Gadget", 20237100, 10), ("iPhone 17 AIR 1TB", "Gadget", 23618100, 10),
-            ("iPhone 17e 256GB", "Gadget", 12380000, 10), ("iPhone 17e 512GB", "Gadget", 16475200, 10),
-            ("iPhone 16 128GB", "Gadget", 15951400, 10), ("iPhone 16 256GB", "Gadget", 16903800, 10),
-            ("iPhone 16 PLUS 128GB", "Gadget", 15141900, 10), ("iPhone 16 PLUS 256GB", "Gadget", 16380000, 10),
-            ("iPhone 15 128GB", "Gadget", 13332400, 10), ("Galaxy S26 Ultra 256GB", "Gadget", 23332400, 10),
-            ("Galaxy S26 Ultra 512GB", "Gadget", 26189500, 10), ("Galaxy S26 Ultra 1TB", "Gadget", 30475200, 10),
-            ("Galaxy S26+ 256GB", "Gadget", 18570500, 10), ("Galaxy S26+ 512GB", "Gadget", 21427600, 10),
-            ("Galaxy S26 256GB", "Gadget", 15713300, 10), ("Galaxy S25 Ultra 256GB", "Gadget", 18570500, 10),
-            ("Reno 16 Pro 256GB", "Gadget", 14284800, 10), ("Reno 16 256GB (8GB)", "Gadget", 11427600, 10),
-            ("Reno 16 256GB (12GB)", "Gadget", 12380000, 10), ("Reno 16 F 128GB", "Gadget", 7618100, 10),
-            ("Find X9 Ultra", "Gadget", 26665700, 10), ("OPPO A6 128GB", "Gadget", 3808600, 10),
-        ]
-        c.executemany("INSERT INTO produk (nama, kategori, harga_modal, stok) VALUES (?,?,?,?)", data)
-        conn.commit()
-
-def tanam_data_pakaian():
-    existing = {row[0] for row in c.execute("SELECT nama FROM produk").fetchall()}
-    data_pakaian = [
-        ("Tunik Lop Top", "Atasan", 80000, 1), ("Rok Lurus", "Bawahan", 75000, 1),
-        ("Atasan Orange", "Atasan", 70000, 1), ("Hem", "Atasan", 50000, 1),
-        ("Mini Dress", "Dress", 50000, 2), ("Casual Dress", "Dress", 40000, 1),
-        ("Atasan Polkadot", "Atasan", 70000, 1), ("Outer", "Outerwear", 70000, 2),
-        ("Spanya Dress", "Dress", 50000, 3), ("Mini Dress Navy", "Dress", 75000, 1),
-        ("Celana Merah", "Bawahan", 35000, 1), ("Batik Premium (Keterangan 2)", "Batik", 60000, 1),
-        ("Batik Reguler (Keterangan 2)", "Batik", 50000, 10), ("Dress Premium (Keterangan 3)", "Dress", 50000, 30),
-        ("Dress Ibu Merah", "Dress", 60000, 1), ("Dress Baru (Keterangan 3)", "Dress", 30000, 1),
-        ("Jeans Wool", "Bawahan", 80000, 1), ("Midi Dress Hitam Merah", "Dress", 30000, 1),
-        ("Atasan Ibu Merah", "Atasan", 50000, 1), ("Atasan Basic (Keterangan 3)", "Atasan", 20000, 5),
-        ("Long Dress / Gamis (Keterangan 4)", "Dress", 50000, 20),
-        ("Dress Putih Lengan Panjang", "Dress", 0, 5), ("Hoodie Orange Female Monster", "Atasan", 0, 5),
-        ("Dress Stripe Hitam Putih", "Dress", 0, 5), ("Jumpeuit Apron Hitam", "Pakaian", 0, 5),
-        ("Kemeja Two-Way Jolene Olive", "Atasan", 0, 5), ("Dress Double-Breasted Olive", "Dress", 0, 5),
-        ("Dress Lace Pink Mutiara", "Dress", 0, 5), ("Blouse Ruffle Cream", "Atasan", 0, 5),
-        ("Atasan Puff Sleeve Floral Mint", "Atasan", 0, 5), ("Dress Textured Khaki Sabuk", "Dress", 0, 5),
-        ("Tunik Textured Abu-abu", "Atasan", 0, 5), ("Sweater Rajut Chunky Cream", "Atasan", 0, 5),
-        ("Blouse Lace Turtleneck Putih", "Atasan", 0, 5), ("Trench Coat Khaki Pink Lining", "Outerwear", 0, 5),
-        ("Dress Textured Abu Tanpa Lengan", "Dress", 0, 5), ("Dress Textured Beige Kancing", "Dress", 0, 5),
-        ("Dress Pinafore Aurora Taupe", "Dress", 0, 5)
-    ]
-    for nama, kat, modal, stok in data_pakaian:
-        if nama not in existing:
-            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) VALUES (?,?,?,?,0,NULL)", (nama, kat, modal, stok))
-    conn.commit()
-
-tanam_data_brosur()
-tanam_data_pakaian()
 
 # ==================== LOGIN ====================
 if "logged_in" not in st.session_state:
@@ -379,6 +314,7 @@ with st.sidebar:
         "📊 Laporan & Analitik",
         "👕 Modal vs Profit", 
         "💾 Backup, Cetak & Impor",
+        "🏢 Profil & Tema",
     ]
     if st.session_state.role == "admin":
         menu_list.extend(["⚙️ Pengaturan Owner", "👤 Manajemen User", "📝 Log Aktivitas"])
@@ -391,7 +327,6 @@ with st.sidebar:
             st.session_state[k] = False if k == "logged_in" else ""
         st.session_state.pop("flash", None)
         st.session_state.pop("balloons", None)
-        st.session_state.pop("snow", None)
         for k in list(st.session_state.keys()):
             if k.startswith("_setting_"):
                 st.session_state.pop(k, None)
@@ -762,9 +697,8 @@ elif pilihan == "💰 Pembayaran Cicilan":
         st.dataframe(df_bayar, use_container_width=True, hide_index=True)
 
 elif pilihan == "🖨️ Cetak Slip Kredit":
-    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian Kredit</h1><p>Cetak dokumen resmi (2 Halaman)</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip & Perjanjian</h1><p>Desain Invoice Profesional</p></div>', unsafe_allow_html=True)
 
-    # Ambil data kredit
     df_kredit_cetak = pd.read_sql_query("""
         SELECT k.id, c.nama as customer_nama, c.telepon, c.alamat, c.nik,
                p.nama as produk_nama, k.harga_cash, k.dp, k.pokok_hutang, k.total_hutang,
@@ -781,204 +715,221 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         pilih_id = st.selectbox("Pilih ID Kredit untuk dicetak", df_kredit_cetak['id'].tolist())
         kredit_data = df_kredit_cetak[df_kredit_cetak['id'] == pilih_id].iloc[0]
 
-        # Ambil jadwal angsuran
         df_jadwal = pd.DataFrame(build_jadwal_angsuran(
             kredit_data['total_hutang'], kredit_data['cicilan_bulan'],
             kredit_data['tenor'], kredit_data['tanggal_kredit']
         ))
 
-        # Helper format tanggal Indonesia
         def format_tgl_indo(tgl_str):
             try:
                 dt = datetime.strptime(tgl_str, "%Y-%m-%d")
-                bulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
-                return f"{dt.day} {bulan[dt.month-1]} {dt.year}"
+                bulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"]
+                return f"{dt.day:02d} {bulan[dt.month-1]} {dt.year}"
             except:
                 return tgl_str
 
-        # Siapkan Variabel untuk PDF
         tgl_kredit_indo = format_tgl_indo(kredit_data['tanggal_kredit'])
         jt_pertama_indo = format_tgl_indo(kredit_data['jatuh_tempo'])
         
-        # Denda & Materai
         denda_persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
-        biaya_materai = 10000 # Sesuai PDF
+        biaya_materai = 10000
         cicilan = kredit_data['cicilan_bulan']
-        total_angsuran = kredit_data['total_hutang']
         
-        # Baris Tabel Jadwal (Hanya Kolom KE & JATUH TEMPO sesuai PDF)
+        logo_base64 = ""
+        logo_path = get_pengaturan("bisnis_logo")
+        if logo_path and os.path.exists(logo_path):
+            with open(logo_path, "rb") as image_file:
+                logo_base64 = f"data:image/png;base64,{base64.b64encode(image_file.read()).decode()}"
+
+        ttd_base64 = ""
+        ttd_path = get_pengaturan("bisnis_ttd")
+        if ttd_path and os.path.exists(ttd_path):
+            with open(ttd_path, "rb") as image_file:
+                ttd_base64 = f"data:image/png;base64,{base64.b64encode(image_file.read()).decode()}"
+
+        warna_tema = get_pengaturan("tema_warna", "#1e3a8a")
+
         jadwal_rows = ""
         for _, row in df_jadwal.iterrows():
-            jadwal_rows += f"<tr><td style='text-align:center;'>{row['ke']}</td><td style='text-align:center;'>{row['jatuh_tempo']}</td></tr>"
+            jadwal_rows += f"<tr><td style='text-align:center;'>{row['ke']}</td><td style='text-align:center;'>{row['jatuh_tempo']}</td><td style='text-align:right;'>{format_rp(row['angsuran'])}</td><td style='text-align:center;'>BELUM</td></tr>"
 
-        # HTML & CSS Desain (Persis PDF)
         html_slip = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Times+New+Roma&display=swap');
-            .doc-container {{
-                font-family: 'Times New Roman', Times, serif;
-                color: #000;
-                background: white;
-                max-width: 800px;
-                margin: auto;
-                padding: 40px;
-                line-height: 1.5;
-                box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            }}
-            .header-doc {{ text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }}
-            .header-doc h1 {{ margin: 0; font-size: 24px; letter-spacing: 2px; }}
-            .header-doc p {{ margin: 5px 0; font-size: 12px; }}
-            
-            .section-title {{ font-weight: bold; background: #e0e0e0; padding: 5px 10px; margin-top: 20px; font-size: 14px; }}
-            
-            .data-table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-            .data-table td {{ padding: 5px 0; vertical-align: top; }}
-            
-            .dp-box {{ background: #f0f0f0; padding: 10px; text-align: center; border-radius: 5px; margin: 15px 0; font-weight: bold; }}
-            
-            .jadwal-table {{ width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }}
-            .jadwal-table th, .jadwal-table td {{ border: 1px solid #000; padding: 6px; }}
-            
-            .warning-box {{ background: #fff3f3; border-left: 4px solid #d32f2f; padding: 10px; margin: 20px 0; font-size: 12px; }}
-            .warning-box h4 {{ margin: 0 0 5px 0; color: #d32f2f; text-transform: uppercase; }}
-            
-            .page-break {{ page-break-before: always; margin-top: 50px; }}
-            
-            .pasal-title {{ text-align: center; font-weight: bold; font-size: 14px; margin-top: 20px; margin-bottom: 10px; }}
-            .pasal-content {{ text-align: justify; font-size: 13px; text-indent: 30px; margin-bottom: 10px; }}
-            .pasal-list {{ font-size: 13px; padding-left: 20px; text-align: justify; }}
-            
-            .ttd-container {{ display: flex; justify-content: space-between; margin-top: 50px; text-align: center; font-size: 13px; }}
-            .ttd-box {{ width: 45%; }}
-            .ttd-space {{ height: 80px; }}
-            
+            body {{ font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px; }}
+            .doc-container {{ background: white; max-width: 800px; margin: auto; padding: 40px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
+            .header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid {warna_tema}; padding-bottom: 20px; margin-bottom: 20px; }}
+            .header-left {{ display: flex; align-items: center; gap: 15px; }}
+            .header-left img {{ max-height: 70px; max-width: 150px; }}
+            .company-details h1 {{ margin: 0; color: {warna_tema}; font-size: 22px; }}
+            .company-details p {{ margin: 3px 0; font-size: 12px; color: #555; }}
+            .invoice-title {{ text-align: right; }}
+            .invoice-title h2 {{ margin: 0; color: {warna_tema}; font-size: 28px; text-transform: uppercase; }}
+            .info-grid {{ display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 13px; }}
+            .info-box h4 {{ margin: 0 0 5px 0; color: #888; text-transform: uppercase; font-size: 11px; }}
+            .info-box p {{ margin: 2px 0; font-weight: bold; }}
+            .table-data {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }}
+            .table-data th {{ background: {warna_tema}; color: white; padding: 10px; text-align: left; }}
+            .table-data td {{ padding: 10px; border-bottom: 1px solid #ddd; }}
+            .total-box {{ background: #f9f9f9; padding: 15px; border-left: 4px solid {warna_tema}; width: 50%; margin-left: auto; font-size: 14px; margin-bottom: 30px; }}
+            .total-box .row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
+            .total-box .grand-total {{ font-weight: bold; font-size: 16px; color: {warna_tema}; border-top: 1px solid #ccc; padding-top: 5px; }}
+            .footer {{ display: flex; justify-content: space-between; margin-top: 40px; font-size: 13px; }}
+            .signature {{ text-align: center; }}
+            .signature img {{ height: 60px; margin-bottom: 5px; }}
+            .warning {{ background: #fff3f3; color: #d32f2f; padding: 15px; font-size: 12px; border-radius: 5px; margin-top: 20px; }}
+            .page-break {{ page-break-before: always; }}
             @media print {{
-                body {{ background: white; margin: 0; padding: 0; }}
-                .doc-container {{ box-shadow: none; padding: 0; max-width: 100%; }}
-                .page-break {{ page-break-before: always; }}
+                body {{ background: white; padding: 0; }}
+                .doc-container {{ box-shadow: none; padding: 0; }}
             }}
         </style>
+        </head>
+        <body>
+            <div class="doc-container">
+                <div class="header">
+                    <div class="header-left">
+                        {f'<img src="{logo_base64}" alt="Logo">' if logo_base64 else ''}
+                        <div class="company-details">
+                            <h1>{get_pengaturan("bisnis_nama")}</h1>
+                            <p>{get_pengaturan("bisnis_alamat")}</p>
+                            <p>Telp: {get_pengaturan("bisnis_telepon")} | Email: {get_pengaturan("bisnis_email")}</p>
+                        </div>
+                    </div>
+                    <div class="invoice-title">
+                        <h2>INVOICE</h2>
+                        <p><strong>ID:</strong> INV-{kredit_data['id']:04d}</p>
+                        <p><strong>Tanggal:</strong> {tgl_kredit_indo}</p>
+                        <p><strong>Status:</strong> <span style="color:green;">{kredit_data['status'].upper()}</span></p>
+                    </div>
+                </div>
 
-        <div class="doc-container">
-            <!-- ================= HALAMAN 1 ================= -->
-            <div class="header-doc">
-                <h1>GRACE'S ELECTRONIC</h1>
-                <p>Cash & Credit · Authorized Retailer</p>
-                <p>Sekolah Darat RT 007 RW 000, Kel. Sekolah Darat, Kec. Sekolah Darat, Kab. Kutai Barat, Prov. Kalimantan Timur</p>
-                <p>HP/WA: 0822-9954-8411</p>
-                <br>
-                <p style="text-align:left; font-weight:bold;">Status: <span style="color:green;">● {kredit_data['status'].upper()}</span></p>
-            </div>
+                <div class="info-grid">
+                    <div class="info-box">
+                        <h4>Ditagihkan Kepada:</h4>
+                        <p>{kredit_data['customer_nama']}</p>
+                        <p>{kredit_data['telepon'] or '-'}</p>
+                        <p style="font-weight:normal;">{kredit_data['alamat'] or '-'}</p>
+                        <p style="font-weight:normal;">NIK: {kredit_data['nik'] or '-'}</p>
+                    </div>
+                    <div class="info-box" style="text-align:right;">
+                        <h4>Transfer Pembayaran:</h4>
+                        <p>{get_pengaturan("bank_nama")}</p>
+                        <p>No. Rek: {get_pengaturan("bank_rekening")}</p>
+                        <p style="font-weight:normal;">A/N: {get_pengaturan("bank_atas_nama")}</p>
+                    </div>
+                </div>
 
-            <div class="section-title">DATA CUSTOMER</div>
-            <table class="data-table">
-                <tr><td style="width:120px;">Nama</td><td>: {kredit_data['customer_nama']}</td></tr>
-                <tr><td>Telepon</td><td>: {kredit_data['telepon'] or '-'}</td></tr>
-                <tr><td>NIK</td><td>: {kredit_data['nik'] or '-'}</td></tr>
-                <tr><td>Alamat</td><td>: {kredit_data['alamat'] or '-'}</td></tr>
-            </table>
+                <h4 style="margin-bottom:10px;">Rincian Pembiayaan</h4>
+                <table class="table-data">
+                    <thead>
+                        <tr>
+                            <th style="width:10%; text-align:center;">KE</th>
+                            <th style="width:40%; text-align:center;">JATUH TEMPO</th>
+                            <th style="width:30%; text-align:right;">NOMINAL ANGSURAN</th>
+                            <th style="width:20%; text-align:center;">STATUS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {jadwal_rows}
+                        <tr>
+                            <td colspan="2" style="text-align:center; font-weight:bold;">BIAYA MATERAI (Ditagih di bulan terakhir)</td>
+                            <td style="text-align:right; font-weight:bold;">{format_rp(biaya_materai)}</td>
+                            <td style="text-align:center;">-</td>
+                        </tr>
+                    </tbody>
+                </table>
 
-            <div class="dp-box">
-                DP DIBAYAR<br>
-                <span style="font-size: 18px;">{format_rp(kredit_data['dp'])}</span>
-            </div>
+                <div class="total-box">
+                    <div class="row">
+                        <span>Uang Muka (DP):</span>
+                        <span>{format_rp(kredit_data['dp'])}</span>
+                    </div>
+                    <div class="row">
+                        <span>Total Kewajiban Angsuran:</span>
+                        <span>{format_rp(kredit_data['total_hutang'])}</span>
+                    </div>
+                    <div class="row grand-total">
+                        <span>Harga Cash:</span>
+                        <span>{format_rp(kredit_data['harga_cash'])}</span>
+                    </div>
+                </div>
 
-            <div class="section-title">Jadwal Angsuran — {kredit_data['tenor']} Bulan</div>
-            <table class="jadwal-table">
-                <thead>
-                    <tr>
-                        <th style="width: 50%;">KE</th>
-                        <th style="width: 50%;">JATUH TEMPO</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {jadwal_rows}
-                </tbody>
-            </table>
-            <p style="font-size: 11px; margin-top: 10px;">*Catatan: Terdapat Biaya Administrasi/Materai sebesar <strong>{format_rp(biaya_materai)}</strong> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir (ke-{kredit_data['tenor']}). Total yang disetor pada bulan ke-{kredit_data['tenor']} adalah <strong>{format_rp(cicilan + biaya_materai)}</strong>.</p>
+                <div class="warning">
+                    <strong>PENTING - KONSEKUENSI MANGKIR:</strong><br>
+                    Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking. Hal ini mengakibatkan Debitur masuk dalam daftar hitam (blacklist) yang akan menyulitkan Debitur untuk mengajukan pinjaman/kredit di lembaga keuangan manapun di kemudian hari.
+                </div>
 
-            <div class="section-title">PEMBAYARAN TRANSFER RESMI</div>
-            <table class="data-table">
-                <tr><td style="width:120px;">Bank Mandiri</td><td>: <strong>148-00-2889246-4</strong></td></tr>
-                <tr><td>Atas Nama</td><td>: <strong>CV GRACE HAVEN TRANSPORT</strong></td></tr>
-            </table>
-
-            <div class="warning-box">
-                <h4>PENTING - KONSEKUENSI MANGKIR</h4>
-                <p>Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking. Hal ini mengakibatkan Debitur masuk dalam daftar hitam (blacklist) yang akan menyulitkan Debitur untuk mengajukan pinjaman/kredit di lembaga keuangan manapun di kemudian hari.</p>
+                <div class="footer">
+                    <div>
+                        <p><strong>Catatan:</strong></p>
+                        <ul style="margin:0; padding-left:15px; font-size:12px;">
+                            <li>Pembayaran dianggap sah jika sudah masuk ke rekening perusahaan.</li>
+                            <li>Simpan bukti transfer Anda.</li>
+                            <li>Barang berupa: <strong>{kredit_data['produk_nama']}</strong></li>
+                        </ul>
+                    </div>
+                    <div class="signature">
+                        <p>Hormat Kami,</p>
+                        {f'<img src="{ttd_base64}" alt="TTD">' if ttd_base64 else '<div style="height:60px;"></div>'}
+                        <p><strong>Admin {get_pengaturan("bisnis_nama")}</strong></p>
+                    </div>
+                </div>
             </div>
             
-            <p style="text-align:center; font-size:11px; margin-top:30px; border-top: 1px solid #000; padding-top: 10px;">
-                <strong>GRACE'S ELECTRONIC</strong><br>
-                Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak. Simpan sebagai bukti pembayaran yang sah.
-            </p>
-
-            <!-- ================= HALAMAN 2 ================= -->
             <div class="page-break"></div>
-            
-            <p class="pasal-content">Pada hari ini, <strong>{tgl_kredit_indo}</strong>, yang bertanda tangan di bawah ini:</p>
-            
-            <p class="pasal-content"><strong>PIHAK PERTAMA :</strong> CV. GRACE HAVEN TRANSPORT (Grace's Electronic), berkedudukan di Sekolaq Darat RT 007 RW 000, Kelurahan/Desa Sekolaq Darat, Kecamatan Sekolaq Darat, Kabupaten Kutai Barat, Provinsi Kalimantan Timur. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh ADI HARIANTO, S.E. selaku Direktur.</p>
-            
-            <p class="pasal-content"><strong>PIHAK KEDUA :</strong> {kredit_data['customer_nama'].upper()}, Warga Negara Indonesia, Pekerjaan Wiraswasta, bertempat tinggal di {kredit_data['alamat'] or '-'}, Telp/WA: {kredit_data['telepon'] or '-'}. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: {kredit_data['nik'] or '-'}.</p>
-            
-            <p class="pasal-content">Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan sebagai berikut:</p>
+            <div class="doc-container">
+                <h3 style="text-align:center; color:{warna_tema};">SURAT PERJANJIAN KREDIT</h3>
+                <p style="font-size:13px; text-align:justify;">Pada hari ini, <strong>{tgl_kredit_indo}</strong>, yang bertanda tangan di bawah ini:</p>
+                
+                <p style="font-size:13px; text-align:justify;"><strong>PIHAK PERTAMA :</strong> {get_pengaturan("bisnis_nama")}, berkedudukan di {get_pengaturan("bisnis_alamat")}. Dalam hal ini diwakili oleh Admin selaku Direktur.</p>
+                
+                <p style="font-size:13px; text-align:justify;"><strong>PIHAK KEDUA :</strong> {kredit_data['customer_nama'].upper()}, Warga Negara Indonesia, bertempat tinggal di {kredit_data['alamat'] or '-'}, Telp/WA: {kredit_data['telepon'] or '-'}. Pemegang KTP dengan NIK: {kredit_data['nik'] or '-'}.</p>
+                
+                <p style="font-size:13px; text-align:justify;">Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan sebagai berikut:</p>
+                
+                <h4 style="text-align:center; margin-top:20px;">PASAL 1 - OBJEK PERJANJIAN</h4>
+                <p style="font-size:13px; text-align:justify;">Pihak Pertama setuju untuk membiayai pembelian barang berupa <strong>{kredit_data['produk_nama']}</strong> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
+                
+                <h4 style="text-align:center; margin-top:20px;">PASAL 2 - KETENTUAN PEMBAYARAN</h4>
+                <ol style="font-size:13px; text-align:justify; padding-left:20px;">
+                    <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar <strong>{format_rp(kredit_data['dp'])}</strong>.</li>
+                    <li>Total kewajiban angsuran yang harus dibayar oleh Pihak Kedua adalah sebesar <strong>{format_rp(kredit_data['total_hutang'])}</strong>.</li>
+                    <li>Jangka waktu pembiayaan adalah <strong>{kredit_data['tenor']} bulan</strong>, dengan angsuran bulanan sebesar <strong>{format_rp(kredit_data['cicilan_bulan'])}</strong>.</li>
+                    <li>Angsuran pertama wajib dibayarkan pada tanggal <strong>{jt_pertama_indo}</strong> dan selanjutnya setiap bulan hingga lunas.</li>
+                </ol>
+                
+                <h4 style="text-align:center; margin-top:20px;">PASAL 3 - DENDA DAN WANPRESTASI</h4>
+                <ol style="font-size:13px; text-align:justify; padding-left:20px;">
+                    <li>Keterlambatan pembayaran dikenakan denda sebesar <strong>{denda_persen}%</strong> per hari dari jumlah angsuran tertunggak.</li>
+                    <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
+                    <li>Kreditur berhak melaporkan Debitur ke SLIK OJK / BI Checking jika terjadi wanprestasi.</li>
+                </ol>
 
-            <div class="pasal-title">PASAL 1<br>OBJEK PERJANJIAN</div>
-            <p class="pasal-content">Pihak Pertama setuju untuk membiayai pembelian barang berupa <strong>{kredit_data['produk_nama']}</strong> kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
-
-            <div class="pasal-title">PASAL 2<br>KETENTUAN PEMBAYARAN</div>
-            <ol class="pasal-list">
-                <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar <strong>{format_rp(kredit_data['dp'])}</strong>.</li>
-                <li>Total kewajiban angsuran yang harus dibayar oleh Pihak Kedua adalah sebesar <strong>{format_rp(kredit_data['total_hutang'])}</strong>.</li>
-                <li>Jangka waktu pembiayaan adalah <strong>{kredit_data['tenor']} ({kredit_data['tenor']})</strong> bulan, dengan angsuran bulanan sebesar <strong>{format_rp(kredit_data['cicilan_bulan'])}</strong>.</li>
-                <li>Angsuran pertama wajib dibayarkan pada tanggal <strong>{jt_pertama_indo}</strong> dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan angsuran terakhir.</li>
-                <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT.</li>
-                <li>Pihak Kedua dikenakan Biaya Administrasi berupa bea materai sebesar {format_rp(biaya_materai)} yang posisinya BERADA DI LUAR nominal angsuran. Biaya tersebut akan ditagihkan dan dibayarkan bersamaan dengan setoran angsuran terakhir (angsuran ke-{kredit_data['tenor']}). Dengan demikian, total pembayaran pada bulan ke-{kredit_data['tenor']} adalah sebesar <strong>{format_rp(cicilan + biaya_materai)}</strong> (Rp {cicilan:,.0f} angsuran + Rp {biaya_materai:,.0f} materai).</li>
-            </ol>
-
-            <div class="pasal-title">PASAL 3<br>DENDA DAN WANPRESTASI</div>
-            <ol class="pasal-list">
-                <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <strong>{denda_persen}%</strong> per hari dari jumlah angsuran yang tertunggak, dengan total denda maksimal 100% dari pokok pembiayaan.</li>
-                <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
-                <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking, yang mengakibatkan Debitur masuk dalam daftar hitam (blacklist) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
-            </ol>
-
-            <div class="pasal-title">PASAL 4<br>PENYELESAIAN SENGKETA DAN DOMISILI</div>
-            <ol class="pasal-list">
-                <li>Segala perselisihan yang timbul dari perjanjian ini akan diselesaikan secara musyawarah mufakat oleh Para Pihak.</li>
-                <li>Apabila musyawarah tidak mencapai kesepakatan, Para Pihak sepakat untuk menyelesaikannya melalui Lembaga Alternatif Penyelesaian Sengketa Sektor Jasa Keuangan (LAPS SJK) atau Pengadilan Negeri Kutai Barat.</li>
-                <li>Kreditur dilarang melakukan penarikan objek pembiayaan secara paksa tanpa prosedur hukum yang sah sesuai dengan POJK Nomor 22 Tahun 2023 dan Putusan Mahkamah Konstitusi Nomor 18/PUU-XVII/2019.</li>
-                <li>Para pihak memilih domisili hukum yang umum dan tetap di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
-            </ol>
-
-            <div class="pasal-title">PASAL 5<br>KETENTUAN PENUTUP</div>
-            <p class="pasal-content">Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
-
-            <div class="ttd-container">
-                <div class="ttd-box">
-                    <p>PIHAK PERTAMA (KREDITUR)</p>
-                    <div class="ttd-space"></div>
-                    <p><strong><u>ADI HARIANTO, S.E.</u></strong><br>Direktur CV. Grace Haven Transport</p>
-                </div>
-                <div class="ttd-box">
-                    <p>PIHAK KEDUA (DEBITUR)</p>
-                    <div class="ttd-space"></div>
-                    <p><strong><u>{kredit_data['customer_nama'].upper()}</u></strong><br>Pemegang KTP NIK: {kredit_data['nik'] or '-'}</p>
+                <div class="footer" style="margin-top:60px;">
+                    <div class="signature" style="width:45%;">
+                        <p>PIHAK PERTAMA (KREDITUR)</p>
+                        {f'<img src="{ttd_base64}" alt="TTD">' if ttd_base64 else '<div style="height:60px;"></div>'}
+                        <p><strong>{get_pengaturan("bisnis_nama")}</strong></p>
+                    </div>
+                    <div class="signature" style="width:45%;">
+                        <p>PIHAK KEDUA (DEBITUR)</p>
+                        <div style="height:60px;"></div>
+                        <p><strong>{kredit_data['customer_nama'].upper()}</strong></p>
+                    </div>
                 </div>
             </div>
-            
-            <p style="text-align:center; font-size:11px; margin-top:30px;">
-                Dokumen ini sah dan mengikat secara hukum.
-            </p>
-        </div>
+        </body>
+        </html>
         """
         
-        # Tampilkan di Streamlit
-        st.markdown(html_slip, unsafe_allow_html=True)
+        components.html(html_slip, height=1200, scrolling=True)
         
-        # Tombol Print
-        if st.button("🖨️ Cetak Dokumen"):
+        st.markdown("---")
+        if st.button("🖨️ Cetak / Simpan PDF"):
+            st.info("💡 Tips: Klik tombol di bawah, lalu pada jendela print browser, pilih 'Save as PDF' dan centang 'Background Graphics'.")
             components.html(
                 """
                 <script>
@@ -987,7 +938,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 """,
                 height=0,
             )
-            st.success("Perintah cetak dikirim ke browser. Pastikan untuk mengaktifkan 'Background Graphics' di pengaturan print browser Anda.")
+
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Daftar Customer", "➕ Tambah/Edit Customer"])
@@ -1445,6 +1396,81 @@ elif pilihan == "📊 Laporan & Analitik":
                 tooltip=["Kategori", "Total_Penjualan", "Total_Laba"]
             ).properties(height=350, title="Distribusi Penjualan per Kategori")
             st.altair_chart(chart_kat, use_container_width=True)
+elif pilihan == "🏢 Profil & Tema":
+    st.markdown('<div class="main-header"><h1>🏢 Profil & Tema</h1><p>Kustomisasi Kop Surat, Bank, dan Warna Invoice</p></div>', unsafe_allow_html=True)
+    
+    if st.session_state.role != "admin":
+        st.error("⛔ Halaman ini hanya untuk Owner/Admin.")
+        st.stop()
+
+    tab1, tab2, tab3 = st.tabs(["🏢 Data Bisnis", "🏦 Info Bank", "🎨 Tema & Tanda Tangan"])
+    
+    with tab1:
+        with st.form("form_profil_bisnis"):
+            st.subheader("Identitas Toko")
+            nama_b = st.text_input("Nama Bisnis", value=get_pengaturan("bisnis_nama"))
+            alamat_b = st.text_area("Alamat Lengkap", value=get_pengaturan("bisnis_alamat"))
+            telp_b = st.text_input("No. Telepon / WA", value=get_pengaturan("bisnis_telepon"))
+            email_b = st.text_input("Email", value=get_pengaturan("bisnis_email"))
+            
+            if st.form_submit_button("Simpan Identitas"):
+                set_pengaturan("bisnis_nama", nama_b)
+                set_pengaturan("bisnis_alamat", alamat_b)
+                set_pengaturan("bisnis_telepon", telp_b)
+                set_pengaturan("bisnis_email", email_b)
+                flash("Identitas Bisnis berhasil diperbarui.")
+                st.rerun()
+
+    with tab2:
+        with st.form("form_bank"):
+            st.subheader("Informasi Rekening Transfer")
+            bank_n = st.text_input("Nama Bank", value=get_pengaturan("bank_nama"))
+            bank_r = st.text_input("Nomor Rekening", value=get_pengaturan("bank_rekening"))
+            bank_a = st.text_input("Atas Nama", value=get_pengaturan("bank_atas_nama"))
+            
+            if st.form_submit_button("Simpan Info Bank"):
+                set_pengaturan("bank_nama", bank_n)
+                set_pengaturan("bank_rekening", bank_r)
+                set_pengaturan("bank_atas_nama", bank_a)
+                flash("Info Bank berhasil diperbarui.")
+                st.rerun()
+
+    with tab3:
+        st.subheader("Tema Warna & File Gambar")
+        
+        warna_tema = st.color_picker("Pilih Warna Utama (Header & Tombol)", get_pengaturan("tema_warna"))
+        if st.button("Simpan Warna Tema"):
+            set_pengaturan("tema_warna", warna_tema)
+            flash("Warna tema berhasil disimpan.")
+            st.rerun()
+            
+        st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Logo Toko**")
+            logo_path = get_pengaturan("bisnis_logo")
+            if logo_path and os.path.exists(logo_path):
+                st.image(logo_path, width=150)
+            upload_logo = st.file_uploader("Upload Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
+            if upload_logo and st.button("Simpan Logo"):
+                path_baru = save_uploaded_file(upload_logo, "logo")
+                set_pengaturan("bisnis_logo", path_baru)
+                flash("Logo berhasil diupload.")
+                st.rerun()
+                
+        with col2:
+            st.markdown("**Tanda Tangan / Stempel**")
+            ttd_path = get_pengaturan("bisnis_ttd")
+            if ttd_path and os.path.exists(ttd_path):
+                st.image(ttd_path, width=150)
+            upload_ttd = st.file_uploader("Upload TTD (PNG transparan lebih baik)", type=["png", "jpg", "jpeg"])
+            if upload_ttd and st.button("Simpan TTD"):
+                path_baru = save_uploaded_file(upload_ttd, "ttd")
+                set_pengaturan("bisnis_ttd", path_baru)
+                flash("Tanda tangan berhasil diupload.")
+                st.rerun()
+
 elif pilihan == "👕 Modal vs Profit":
     st.markdown('<div class="main-header"><h1>👕 Modal vs Profit</h1><p>Analisis modal, harga jual, dan potensi laba</p></div>', unsafe_allow_html=True)
 
@@ -1669,8 +1695,8 @@ elif pilihan == "💾 Backup, Cetak & Impor":
 
         html_laporan = f"""
         <div style="font-family: Arial, sans-serif; max-width: 900px; margin: auto; padding: 25px; border: 1px solid #ccc; background: white;">
-            <h2 style="text-align:center; margin-bottom:0;">GRACE'S STORE</h2>
-            <p style="text-align:center; margin-top:5px;">{ALAMAT_TOKO}</p>
+            <h2 style="text-align:center; margin-bottom:0;">{get_pengaturan('bisnis_nama')}</h2>
+            <p style="text-align:center; margin-top:5px;">{get_pengaturan('bisnis_alamat')}</p>
             <hr>
             <h3 style="text-align:center;">LAPORAN RINGKAS</h3>
             <p><strong>Periode:</strong> {periode}</p>
@@ -1708,7 +1734,7 @@ elif pilihan == "💾 Backup, Cetak & Impor":
             <h4>Piutang Aktif Saat Ini</h4>
             <p style="font-size:1.2em;"><strong>{format_rp(total_piutang)}</strong></p>
             <hr>
-            <p style="text-align:center; font-size:0.85em;">Laporan ini dihasilkan otomatis oleh sistem GRACE'S STORE.</p>
+            <p style="text-align:center; font-size:0.85em;">Laporan ini dihasilkan otomatis oleh sistem {get_pengaturan('bisnis_nama')}.</p>
         </div>
         """
         st.markdown(html_laporan, unsafe_allow_html=True)
