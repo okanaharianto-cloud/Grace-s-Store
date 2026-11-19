@@ -1111,9 +1111,12 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         denda_persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
         biaya_materai = 10000
         
-        # Ambil cicilan_final dari baris pertama tabel yang diedit (jika user mengubahnya di tabel)
+       # Ambil cicilan_final dari baris pertama tabel yang diedit (jika user mengubahnya di tabel)
         cicilan_final = df_jadwal_edit.iloc[0]['angsuran'] if not df_jadwal_edit.empty else cicilan_edit
         total_bulan_terakhir = cicilan_final + biaya_materai
+        
+        # TAMBAHKAN BARIS INI:
+        tenor_final = tenor_edit
         
         jadwal_rows = ""
         for _, row in df_jadwal_edit.iterrows():
