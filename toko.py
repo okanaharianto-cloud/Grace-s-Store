@@ -797,7 +797,7 @@ elif pilihan == "🧾 Cetak Invoice Cash":
                 height=0,
             )
             st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
-            elif pilihan == "📤 Kredit Baru":
+elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
 
     df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat, nik FROM customer ORDER BY nama", conn)
@@ -1390,7 +1390,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 """,
                 height=0,
             )
-            elif pilihan == "👥 Data Customer":
+elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Daftar Customer", "➕ Tambah/Edit Customer"])
 
