@@ -1056,28 +1056,51 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 default_jt = datetime.now().date()
             jt_edit = st.date_input("Jatuh Tempo Pertama", value=default_jt, key="edit_jt")
             
-        if st.button("💾 Simpan Perubahan ke Database"):
-            c.execute("UPDATE kredit SET tenor=?, cicilan_bulan=?, jatuh_tempo=? WHERE id=?", 
-                      (tenor_edit, cicilan_edit, jt_edit.strftime("%Y-%m-%d"), kredit_data['id']))
-            conn.commit()
-            log_aksi(st.session_state.username, "EDIT_KREDIT", f"ID {kredit_data['id']} - Tenor: {tenor_edit}, Cicilan: {cicilan_edit}, JT: {jt_edit}")
-            st.success("Data kredit berhasil diperbarui di database.")
-            st.rerun()
+        # ================= TOMBOL SIMPAN & REFRESH =================
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("💾 Simpan Perubahan ke Database", use_container_width=True):
+                c.execute("UPDATE kredit SET tenor=?, cicilan_bulan=?, jatuh_tempo=? WHERE id=?", 
+                          (tenor_edit, cicilan_edit, jt_edit.strftime("%Y-%m-%d"), kredit_data['id']))
+                conn.commit()
+                log_aksi(st.session_state.username, "EDIT_KREDIT", f"ID {kredit_data['id']} - Tenor: {tenor_edit}, Cicilan: {cicilan_edit}, JT: {jt_edit}")
+                
+                # Hapus cache input agar form mengambil data terbaru dari database
+                if "edit_tenor" in st.session_state: del st.session_state["edit_tenor"]
+                if "edit_cicilan" in st.session_state: del st.session_state["edit_cicilan"]
+                if "edit_jt" in st.session_state: del st.session_state["edit_jt"]
+                
+                flash("Data kredit berhasil diperbarui.", "success")
+                st.rerun()
+
+        with col_btn2:
+            if st.button("🔄 Refresh Data (Muat Ulang)", use_container_width=True):
+                # Paksa ambil data terbaru dari database
+                if "edit_tenor" in st.session_state: del st.session_state["edit_tenor"]
+                if "edit_cicilan" in st.session_state: del st.session_state["edit_cicilan"]
+                if "edit_jt" in st.session_state: del st.session_state["edit_jt"]
+                
+                flash("Tampilan telah di-refresh.", "info")
+                st.rerun()
+        # ===========================================================
 
         st.info(f"Pastikan data **{kredit_data['customer_nama']}** sudah benar.")
 
-        # Hitung jadwal dasar
+        # Sinkronisasi variabel untuk cetak HTML
+        tenor_final = tenor_edit
+        cicilan_final = cicilan_edit
         jt_pertama_str = jt_edit.strftime("%Y-%m-%d")
+
+        # Hitung jadwal dasar
         df_jadwal_dasar = pd.DataFrame(build_jadwal_angsuran(
-            kredit_data['total_hutang'], cicilan_edit,
-            tenor_edit, kredit_data['tanggal_kredit'], jt_pertama_str
+            kredit_data['total_hutang'], cicilan_final,
+            tenor_final, kredit_data['tanggal_kredit'], jt_pertama_str
         ))
 
         # ================= FITUR EDIT TABEL JADWAL =================
         st.markdown("#### 📅 Edit Rincian Jadwal Angsuran")
-        st.caption("Anda bisa mengubah tanggal atau nominal secara langsung di tabel di bawah ini.")
+        st.caption("Anda bisa mengubah tanggal (DD-MM-YYYY) atau nominal secara langsung di tabel di bawah ini.")
         
-        # Tampilkan sebagai data editor yang bisa diedit
         df_jadwal_edit = st.data_editor(
             df_jadwal_dasar,
             column_config={
@@ -1088,11 +1111,16 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             },
             hide_index=True,
             use_container_width=True,
-            key=f"editor_jadwal_{pilih_id}_{tenor_edit}_{cicilan_edit}_{jt_pertama_str}" # Key unik agar reset jika data atas diubah
+            key=f"editor_jadwal_{pilih_id}_{tenor_final}_{cicilan_final}_{jt_pertama_str}"
         )
 
-        # Hitung ulang total hutang berdasarkan tabel yang mungkin sudah diedit
+        # Hitung ulang total hutang berdasarkan tabel yang mungkin sudah diedit manual
         total_hutang_final = df_jadwal_edit['angsuran'].sum()
+        
+        # Ambil cicilan_final dari baris pertama tabel (jika user mengubahnya manual)
+        if not df_jadwal_edit.empty:
+            cicilan_final = df_jadwal_edit.iloc[0]['angsuran']
+            
         # ===========================================================
 
         def format_tgl_indo(tgl_str):
@@ -1110,14 +1138,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         
         denda_persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
         biaya_materai = 10000
-        
-       # Ambil cicilan_final dari baris pertama tabel yang diedit (jika user mengubahnya di tabel)
-        cicilan_final = df_jadwal_edit.iloc[0]['angsuran'] if not df_jadwal_edit.empty else cicilan_edit
         total_bulan_terakhir = cicilan_final + biaya_materai
         
-        # TAMBAHKAN BARIS INI:
-        tenor_final = tenor_edit
-        
+        # Looping tabel untuk dimasukkan ke HTML
         jadwal_rows = ""
         for _, row in df_jadwal_edit.iterrows():
             jadwal_rows += f"""
@@ -1127,8 +1150,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <td class="r">{format_rp(row['angsuran'])}</td>
                 <td class="c"><span class="status-badge">BELUM</span></td>
             </tr>"""
-
-     
 
         html_slip = f"""
         <!DOCTYPE html>
@@ -1478,6 +1499,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 """,
                 height=0,
             )
+
+
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Customer</h1><p>Kelola data pelanggan</p></div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📋 Daftar Customer", "➕ Tambah/Edit Customer"])
