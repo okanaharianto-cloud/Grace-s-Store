@@ -1125,8 +1125,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <td class="c"><span class="status-badge">BELUM</span></td>
             </tr>"""
 
-        # Lanjut ke pembuatan HTML...
-        html_slip = f"""
+     
 
         html_slip = f"""
         <!DOCTYPE html>
