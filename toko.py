@@ -1043,7 +1043,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         with col_ed2:
             nik_tampil = st.text_input("NIK (Sesuai KTP)", value=kredit_data['nik'] or "")
             
-        st.markdown("#### 📝 Edit Data Kredit (Opsional)")
+        st.markdown("#### 📝 Edit Data Utama Kredit")
         col_ed3, col_ed4, col_ed5 = st.columns(3)
         with col_ed3:
             tenor_edit = st.number_input("Tenor (Bulan)", min_value=1, value=int(kredit_data['tenor']), key="edit_tenor")
@@ -1066,19 +1066,34 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
 
         st.info(f"Pastikan data **{kredit_data['customer_nama']}** sudah benar.")
 
-        # Gunakan nilai yang diedit untuk preview
-        tenor_final = tenor_edit
-        cicilan_final = cicilan_edit
+        # Hitung jadwal dasar
         jt_pertama_str = jt_edit.strftime("%Y-%m-%d")
-        
-        # Hitung ulang jadwal dengan parameter baru
-        df_jadwal = pd.DataFrame(build_jadwal_angsuran(
-            kredit_data['total_hutang'], cicilan_final,
-            tenor_final, kredit_data['tanggal_kredit'], jt_pertama_str
+        df_jadwal_dasar = pd.DataFrame(build_jadwal_angsuran(
+            kredit_data['total_hutang'], cicilan_edit,
+            tenor_edit, kredit_data['tanggal_kredit'], jt_pertama_str
         ))
+
+        # ================= FITUR EDIT TABEL JADWAL =================
+        st.markdown("#### 📅 Edit Rincian Jadwal Angsuran")
+        st.caption("Anda bisa mengubah tanggal atau nominal secara langsung di tabel di bawah ini.")
         
-        # Hitung ulang total hutang agar sinkron dengan jadwal baru
-        total_hutang_final = df_jadwal['angsuran'].sum()
+        # Tampilkan sebagai data editor yang bisa diedit
+        df_jadwal_edit = st.data_editor(
+            df_jadwal_dasar,
+            column_config={
+                "ke": st.column_config.NumberColumn("Ke", disabled=True),
+                "jatuh_tempo": st.column_config.TextColumn("Jatuh Tempo (DD-MM-YYYY)", required=True),
+                "angsuran": st.column_config.NumberColumn("Nominal (Rp)", format="Rp %d", required=True),
+                "sisa": st.column_config.NumberColumn("Sisa", disabled=True, format="Rp %d")
+            },
+            hide_index=True,
+            use_container_width=True,
+            key=f"editor_jadwal_{pilih_id}_{tenor_edit}_{cicilan_edit}_{jt_pertama_str}" # Key unik agar reset jika data atas diubah
+        )
+
+        # Hitung ulang total hutang berdasarkan tabel yang mungkin sudah diedit
+        total_hutang_final = df_jadwal_edit['angsuran'].sum()
+        # ===========================================================
 
         def format_tgl_indo(tgl_str):
             try:
@@ -1090,16 +1105,18 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
 
         tgl_kredit_indo = format_tgl_indo(kredit_data['tanggal_kredit'])
         jt_pertama_indo = format_tgl_indo(jt_pertama_str)
-        tgl_terakhir = df_jadwal.iloc[-1]['jatuh_tempo'] if not df_jadwal.empty else '-'
+        tgl_terakhir = df_jadwal_edit.iloc[-1]['jatuh_tempo'] if not df_jadwal_edit.empty else '-'
         tgl_lahir_indo = format_tgl_indo(kredit_data['tanggal_lahir']) if kredit_data['tanggal_lahir'] else '-'
         
         denda_persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
         biaya_materai = 10000
-        cicilan = cicilan_final
-        total_bulan_terakhir = cicilan + biaya_materai
+        
+        # Ambil cicilan_final dari baris pertama tabel yang diedit (jika user mengubahnya di tabel)
+        cicilan_final = df_jadwal_edit.iloc[0]['angsuran'] if not df_jadwal_edit.empty else cicilan_edit
+        total_bulan_terakhir = cicilan_final + biaya_materai
         
         jadwal_rows = ""
-        for _, row in df_jadwal.iterrows():
+        for _, row in df_jadwal_edit.iterrows():
             jadwal_rows += f"""
             <tr>
                 <td class="c">{row['ke']}</td>
@@ -1107,6 +1124,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <td class="r">{format_rp(row['angsuran'])}</td>
                 <td class="c"><span class="status-badge">BELUM</span></td>
             </tr>"""
+
+        # Lanjut ke pembuatan HTML...
+        html_slip = f"""
 
         html_slip = f"""
         <!DOCTYPE html>
