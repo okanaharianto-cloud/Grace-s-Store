@@ -798,17 +798,19 @@ elif pilihan == "🧾 Cetak Invoice Cash":
             )
             st.success("Perintah cetak dikirim ke browser. Pastikan 'Background Graphics' dicentang.")
 elif pilihan == "📤 Kredit Baru":
-    st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"><h1>📤 Kredit Baru</h1><p>Buat perjanjian kredit baru & Kelola Kredit Aktif</p></div>', unsafe_allow_html=True)
 
     df_cust = pd.read_sql_query("SELECT id, nama, telepon, alamat, nik FROM customer ORDER BY nama", conn)
     df_prod = pd.read_sql_query("SELECT id, nama, stok, harga_modal, harga_jual, markup_persen, kategori FROM produk WHERE stok > 0 ORDER BY nama", conn)
 
-    if df_prod.empty:
-        st.warning("Tidak ada produk dengan stok tersedia. Tambah stok terlebih dahulu.")
-    else:
-        tab1, tab2 = st.tabs(["➕ Buat Kredit Baru", "📋 Daftar Kredit Aktif"])
+    # Kita tambahkan Tab ke-3 untuk Edit Kredit
+    tab1, tab2, tab3 = st.tabs(["➕ Buat Kredit Baru", "📋 Daftar Kredit Aktif", "✏️ Edit Tenor & Jatuh Tempo"])
 
-        with tab1:
+    with tab1:
+        # ... (KODE TAB 1 SAMA SEPERTI SEBELUMNYA, BIARKAN SAJA) ...
+        if df_prod.empty:
+            st.warning("Tidak ada produk dengan stok tersedia. Tambah stok terlebih dahulu.")
+        else:
             with st.form("form_kredit_baru"):
                 st.subheader("1. Pilih Customer")
                 if df_cust.empty:
@@ -868,23 +870,88 @@ elif pilihan == "📤 Kredit Baru":
                         st.session_state.balloons = True
                         st.rerun()
 
-        with tab2:
-            st.subheader("📋 Daftar Kredit Aktif")
-            df_kredit_aktif = pd.read_sql_query("""
-                SELECT k.id as ID, c.nama as Customer, p.nama as Produk,
-                       k.total_hutang as Total_Hutang, k.sisa_hutang as Sisa,
-                       k.cicilan_bulan as Cicilan, k.tenor as Tenor,
-                       k.tanggal_kredit as Tanggal, k.jatuh_tempo as JT
+    with tab2:
+        st.subheader("📋 Daftar Kredit Aktif")
+        df_kredit_aktif = pd.read_sql_query("""
+            SELECT k.id as ID, c.nama as Customer, p.nama as Produk,
+                   k.total_hutang as Total_Hutang, k.sisa_hutang as Sisa,
+                   k.cicilan_bulan as Cicilan, k.tenor as Tenor,
+                   k.tanggal_kredit as Tanggal, k.jatuh_tempo as JT
+            FROM kredit k
+            JOIN customer c ON c.id = k.customer_id
+            JOIN produk p ON p.id = k.produk_id
+            WHERE k.status = 'Berjalan'
+            ORDER BY k.id DESC
+        """, conn)
+        if df_kredit_aktif.empty:
+            st.info("Tidak ada kredit aktif.")
+        else:
+            st.dataframe(df_kredit_aktif, use_container_width=True, hide_index=True)
+
+    with tab3:
+        st.subheader("✏️ Edit Tenor & Jatuh Tempo (Satuan / Massal)")
+        
+        sub_tab1, sub_tab2 = st.tabs(["Edit Per Kredit", "Geser Semua Jatuh Tempo (Massal)"])
+        
+        # ================= EDIT SATUAN =================
+        with sub_tab1:
+            df_edit_k = pd.read_sql_query("""
+                SELECT k.id, c.nama as customer, p.nama as produk, k.tenor, k.cicilan_bulan, k.total_hutang, k.sisa_hutang, k.jatuh_tempo
                 FROM kredit k
                 JOIN customer c ON c.id = k.customer_id
                 JOIN produk p ON p.id = k.produk_id
                 WHERE k.status = 'Berjalan'
                 ORDER BY k.id DESC
             """, conn)
-            if df_kredit_aktif.empty:
-                st.info("Tidak ada kredit aktif.")
+
+            if df_edit_k.empty:
+                st.info("Tidak ada kredit berjalan yang bisa diedit.")
             else:
-                st.dataframe(df_kredit_aktif, use_container_width=True, hide_index=True)
+                options_edit = {f"ID {row['id']} - {row['customer']} ({row['produk']})": row['id'] for _, row in df_edit_k.iterrows()}
+                pilih_kredit = st.selectbox("Pilih Kredit yang akan diedit", list(options_edit.keys()), key="sel_edit_kredit")
+                kredit_id_edit = options_edit[pilih_kredit]
+                data_edit = df_edit_k[df_edit_k['id'] == kredit_id_edit].iloc[0]
+
+                with st.form("form_edit_kredit_satuan"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        tenor_baru = st.number_input("Tenor Baru (Bulan)", min_value=1, value=int(data_edit['tenor']))
+                        cicilan_baru = st.number_input("Cicilan Baru (Rp)", min_value=0.0, value=float(data_edit['cicilan_bulan']), step=1000.0, format="%.0f")
+                    with col_b:
+                        total_hutang_baru = st.number_input("Total Hutang Baru (Rp)", min_value=0.0, value=float(data_edit['total_hutang']), step=1000.0, format="%.0f", help="Bisa disesuaikan jika Anda mengubah cicilan atau tenor")
+                        try:
+                            jt_lama = datetime.strptime(data_edit['jatuh_tempo'], "%Y-%m-%d").date()
+                        except:
+                            jt_lama = datetime.now().date()
+                        jt_baru = st.date_input("Jatuh Tempo Berikutnya", value=jt_lama)
+
+                    if st.form_submit_button("Simpan Perubahan Kredit"):
+                        c.execute("""UPDATE kredit SET tenor=?, cicilan_bulan=?, total_hutang=?, jatuh_tempo=? WHERE id=?""",
+                                  (tenor_baru, cicilan_baru, total_hutang_baru, jt_baru.strftime("%Y-%m-%d"), kredit_id_edit))
+                        conn.commit()
+                        recalculate_kredit(kredit_id_edit) # Hitung ulang sisa hutang
+                        log_aksi(st.session_state.username, "EDIT_KREDIT", f"ID {kredit_id_edit} - Tenor: {tenor_baru}, Cicilan: {cicilan_baru}, JT: {jt_baru}")
+                        flash(f"Data kredit ID {kredit_id_edit} berhasil diupdate.")
+                        st.rerun()
+
+        # ================= EDIT MASSAL =================
+        with sub_tab2:
+            st.warning("⚠️ Fitur ini akan menggeser **SEMUA** tanggal jatuh tempo pada kredit berstatus 'Berjalan'.")
+            with st.form("form_edit_massal"):
+                geser_hari = st.number_input("Geser Jatuh Tempo (dalam hari)", value=0, step=1, help="Isi angka positif untuk memundurkan (misal: 7), angka negatif untuk memajukan (misal: -3).")
+                alasan_geser = st.text_input("Alasan (Opsional)", placeholder="Misal: Libur Lebaran")
+                
+                if st.form_submit_button("Terapkan Pergeseran Massal"):
+                    if geser_hari != 0:
+                        # Update semua jatuh tempo di database
+                        c.execute("UPDATE kredit SET jatuh_tempo = date(jatuh_tempo, ?) WHERE status='Berjalan'", (f"{geser_hari} days",))
+                        conn.commit()
+                        log_aksi(st.session_state.username, "EDIT_KREDIT_MASSAL", f"Geser {geser_hari} hari. Alasan: {alasan_geser}")
+                        flash(f"Berhasil menggeser semua jatuh tempo sebanyak {geser_hari} hari.")
+                        st.rerun()
+                    else:
+                        st.info("Nilai geser 0 hari, tidak ada perubahan yang dilakukan.")
+
 
 elif pilihan == "💰 Pembayaran Cicilan":
     st.markdown('<div class="main-header"><h1>💰 Pembayaran Cicilan</h1><p>Catat pembayaran angsuran kredit</p></div>', unsafe_allow_html=True)
