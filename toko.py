@@ -952,7 +952,6 @@ elif pilihan == "📤 Kredit Baru":
                     else:
                         st.info("Nilai geser 0 hari, tidak ada perubahan yang dilakukan.")
 
-
 elif pilihan == "💰 Pembayaran Cicilan":
     st.markdown('<div class="main-header"><h1>💰 Pembayaran Cicilan</h1><p>Catat pembayaran angsuran kredit</p></div>', unsafe_allow_html=True)
 
