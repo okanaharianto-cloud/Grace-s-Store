@@ -1304,7 +1304,7 @@ elif pilihan == "🤝 Serah Terima Barang":
         for _, r in df_riwayat.iterrows():
             with st.expander(f"📅 {r['tanggal_serah']} - {r['customer']} (IMEI: {r['imei']})"):
                 st.write(f"**Penerima:** {r['penerima']}")
-               if r['foto_bukti']:
+    if r['foto_bukti']:
     st.image(r['foto_bukti'], caption="Bukti Serah Terima", width=400)
     else:
         st.info("Belum ada riwayat serah terima.")
