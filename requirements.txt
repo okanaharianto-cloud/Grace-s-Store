@@ -8,3 +8,11 @@ pandas
 openpyxl
 xlsxwriter
 Pillow
+streamlit
+pandas
+openpyxl
+xlsxwriter
+Pillow
+SQLAlchemy
+psycopg2-binary
+supabase
