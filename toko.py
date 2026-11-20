@@ -1320,12 +1320,12 @@ elif pilihan == "🤝 Serah Terima Barang":
         for _, r in df_riwayat.iterrows():
             with st.expander(f"📅 {r['tanggal_serah']} - {r['customer']} (IMEI: {r['imei']})"):
                 st.write(f"**Penerima:** {r['penerima']}")
-                if r['foto_bukti']:
+               if r['foto_bukti']:
     st.image(r['foto_bukti'], caption="Bukti Serah Terima", width=400)
     else:
         st.info("Belum ada riwayat serah terima.")
 
-# ==================== 9. STOK BARANG ====================
+# ==================== 9. STOK BARANG ==================== 
 elif pilihan == "📦 Stok Barang":
     st.markdown('<div class="main-header"><h1>📦 Real-time Stok Gudang</h1></div>', unsafe_allow_html=True)
 
@@ -2060,7 +2060,7 @@ elif pilihan == "💾 Backup, Cetak & Impor":
     
     tab_backup, tab_excel = st.tabs(["💾 Backup Database", "📑 Cetak Laporan Excel"])
     
-        with tab_backup:
+            with tab_backup:
         st.success("✅ Sistem telah terhubung ke Database Cloud (Supabase).")
         st.info("Data Anda sekarang aman dan tersimpan permanen di cloud. Data tidak akan hilang meskipun aplikasi di-restart.")
         st.markdown("""
@@ -2070,8 +2070,7 @@ elif pilihan == "💾 Backup, Cetak & Impor":
         3. Buka menu **Database** -> **Backups**.
         4. Supabase otomatis melakukan backup harian (Pro plan), atau Anda bisa menggunakan menu **SQL Editor** untuk export data.
         """)
-            
-            st.download_button(
+                st.download_button(
                 label="💾 Download Database Terbaru (toko_kredit.db)",
                 data=db_bytes,
                 file_name=f"backup_toko_kredit_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
