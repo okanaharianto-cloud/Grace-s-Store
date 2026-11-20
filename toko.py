@@ -1175,22 +1175,7 @@ elif pilihan == "👥 Data Customer":
             pilih = st.selectbox("Pilih Customer", list(opsi.keys()))
             cid = opsi[pilih]
             detail_c = df_c[df_c['id'] == cid].iloc[0]
-            
-            with st.expander(f"Berkas Identitas: {detail_c['nama']}", expanded=True):
-                st.write(f"**NIK:** {detail_c['nik']}")
-                col_img1, col_img2 = st.columns(2)
-                with col_img1:
-if detail_c['foto_ktp']:
-    st.image(detail_c['foto_ktp'], caption="Foto KTP", use_column_width=True)
-        st.info("Belum ada foto KTP.")
-if detail_c['foto_kk']:
-    st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)    
-            with col_img2:
-if detail_c['foto_kk'] and os.path.exists(detail_c['foto_kk']):
-   st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)
-    else:
-st.info("Belum ada foto KK.")
-
+           
             df_riw = pd.read_sql_query("""
                 SELECT k.id, p.nama as produk, k.total_hutang, k.sisa_hutang, k.tenor, k.cicilan_bulan, k.jatuh_tempo, k.status
                 FROM kredit k JOIN produk p ON k.produk_id = p.id WHERE k.customer_id=? ORDER BY k.id DESC
