@@ -1180,7 +1180,7 @@ elif pilihan == "👥 Data Customer":
                 st.write(f"**NIK:** {detail_c['nik']}")
                 col_img1, col_img2 = st.columns(2)
                 with col_img1:
-                   if detail_c['foto_ktp']:
+if detail_c['foto_ktp']:
     st.image(detail_c['foto_ktp'], caption="Foto KTP", use_column_width=True)
 if detail_c['foto_kk']:
     st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)
