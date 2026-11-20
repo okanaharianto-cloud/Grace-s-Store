@@ -1182,8 +1182,7 @@ elif pilihan == "👥 Data Customer":
                 with col_img1:
 if detail_c['foto_ktp']:
     st.image(detail_c['foto_ktp'], caption="Foto KTP", use_column_width=True)
-      else:
-    st.info("Belum ada foto KTP.")
+        st.info("Belum ada foto KTP.")
 if detail_c['foto_kk']:
     st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)    
             with col_img2:
