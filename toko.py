@@ -66,30 +66,46 @@ if not os.path.exists(UPLOAD_DIR):
 def is_pakaian(kat):
     return kat in PAKAIAN_KATEGORI
 
-# ==================== KONEKSI DATABASE ====================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "toko_kredit.db")
-BACKUP_DIR = os.path.join(BASE_DIR, "backups")
+import psycopg2
+from sqlalchemy import create_engine
+from supabase import create_client, Client
 
-if not os.path.exists(BACKUP_DIR):
-    os.makedirs(BACKUP_DIR)
-    
-backup_file = os.path.join(BACKUP_DIR, f"backup_{datetime.now().strftime('%Y%m%d')}.db")
-if os.path.exists(DB_PATH) and not os.path.exists(backup_file):
-    try:
-        shutil.copy2(DB_PATH, backup_file)
-    except Exception:
-        pass
+# --- WRAPPER AGAR KODE SQLITE (?) BISA JALAN DI POSTGRES ---
+class SQLiteCursorWrapper:
+    def __init__(self, cursor):
+        self.cursor = cursor
+    def execute(self, query, params=None):
+        query = query.replace("?", "%s")
+        if params:
+            self.cursor.execute(query, params)
+        else:
+            self.cursor.execute(query)
+    def fetchone(self): return self.cursor.fetchone()
+    def fetchall(self): return self.cursor.fetchall()
+    def __getattr__(self, name): return getattr(self.cursor, name)
+
+class SQLiteConnWrapper:
+    def __init__(self, conn):
+        self.conn = conn
+    def cursor(self): return SQLiteCursorWrapper(self.conn.cursor())
+    def commit(self): self.conn.commit()
+    def rollback(self): self.conn.rollback()
+    def close(self): self.conn.close()
 
 @st.cache_resource
 def get_connection():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    return conn
+    DB_URL = st.secrets["DB_URL"]
+    engine = create_engine(DB_URL)
+    raw_conn = engine.raw_connection()
+    return SQLiteConnWrapper(raw_conn)
 
 conn = get_connection()
 c = conn.cursor()
+
+# --- SETUP SUPABASE STORAGE UNTUK GAMBAR ---
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ==================== STRUKTUR DATABASE (DENGAN FITUR BARU) ====================
 c.execute('''CREATE TABLE IF NOT EXISTS produk (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
@@ -1164,8 +1180,10 @@ elif pilihan == "👥 Data Customer":
                 st.write(f"**NIK:** {detail_c['nik']}")
                 col_img1, col_img2 = st.columns(2)
                 with col_img1:
-                    if detail_c['foto_ktp'] and os.path.exists(detail_c['foto_ktp']):
-                        st.image(detail_c['foto_ktp'], caption="Foto KTP", use_column_width=True)
+                   if detail_c['foto_ktp']:
+    st.image(detail_c['foto_ktp'], caption="Foto KTP", use_column_width=True)
+if detail_c['foto_kk']:
+    st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)
                     else:
                         st.info("Belum ada foto KTP.")
                 with col_img2:
@@ -1302,8 +1320,8 @@ elif pilihan == "🤝 Serah Terima Barang":
         for _, r in df_riwayat.iterrows():
             with st.expander(f"📅 {r['tanggal_serah']} - {r['customer']} (IMEI: {r['imei']})"):
                 st.write(f"**Penerima:** {r['penerima']}")
-                if r['foto_bukti'] and os.path.exists(r['foto_bukti']):
-                    st.image(r['foto_bukti'], caption="Bukti Serah Terima", width=400)
+                if r['foto_bukti']:
+    st.image(r['foto_bukti'], caption="Bukti Serah Terima", width=400)
     else:
         st.info("Belum ada riwayat serah terima.")
 
@@ -2042,14 +2060,16 @@ elif pilihan == "💾 Backup, Cetak & Impor":
     
     tab_backup, tab_excel = st.tabs(["💾 Backup Database", "📑 Cetak Laporan Excel"])
     
-    with tab_backup:
-        st.subheader("Backup Database Manual")
-        st.warning("⚠️ **PENTING:** Simpan file `.db` ini ke tempat aman (Google Drive / Flashdisk) secara berkala untuk mencegah kehilangan data.")
-        
-        try:
-            # Membaca file database untuk diunduh
-            with open(DB_PATH, "rb") as f:
-                db_bytes = f.read()
+        with tab_backup:
+        st.success("✅ Sistem telah terhubung ke Database Cloud (Supabase).")
+        st.info("Data Anda sekarang aman dan tersimpan permanen di cloud. Data tidak akan hilang meskipun aplikasi di-restart.")
+        st.markdown("""
+        **Cara Backup Manual:**
+        1. Login ke dashboard [Supabase](https://supabase.com).
+        2. Buka project Anda.
+        3. Buka menu **Database** -> **Backups**.
+        4. Supabase otomatis melakukan backup harian (Pro plan), atau Anda bisa menggunakan menu **SQL Editor** untuk export data.
+        """)
             
             st.download_button(
                 label="💾 Download Database Terbaru (toko_kredit.db)",
