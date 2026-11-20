@@ -1182,15 +1182,15 @@ elif pilihan == "👥 Data Customer":
                 with col_img1:
 if detail_c['foto_ktp']:
     st.image(detail_c['foto_ktp'], caption="Foto KTP", use_column_width=True)
+      else:
+    st.info("Belum ada foto KTP.")
 if detail_c['foto_kk']:
-    st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)
-                    else:
-                        st.info("Belum ada foto KTP.")
-                with col_img2:
-                    if detail_c['foto_kk'] and os.path.exists(detail_c['foto_kk']):
-                        st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)
-                    else:
-                        st.info("Belum ada foto KK.")
+    st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)    
+            with col_img2:
+if detail_c['foto_kk'] and os.path.exists(detail_c['foto_kk']):
+   st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)
+    else:
+st.info("Belum ada foto KK.")
 
             df_riw = pd.read_sql_query("""
                 SELECT k.id, p.nama as produk, k.total_hutang, k.sisa_hutang, k.tenor, k.cicilan_bulan, k.jatuh_tempo, k.status
