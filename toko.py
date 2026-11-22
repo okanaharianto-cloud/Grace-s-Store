@@ -5,11 +5,10 @@ import hashlib
 import os
 import shutil
 import uuid
+import io
 from datetime import datetime, timedelta
-from urllib.parse import quote
 import altair as alt
 import streamlit.components.v1 as components
-import io
 from PIL import Image
 
 # ==================== KONFIGURASI HALAMAN ====================
@@ -74,6 +73,7 @@ BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 if not os.path.exists(BACKUP_DIR):
     os.makedirs(BACKUP_DIR)
     
+# Backup harian
 backup_file = os.path.join(BACKUP_DIR, f"backup_{datetime.now().strftime('%Y%m%d')}.db")
 if os.path.exists(DB_PATH) and not os.path.exists(backup_file):
     try:
@@ -91,7 +91,7 @@ def get_connection():
 conn = get_connection()
 c = conn.cursor()
 
-# ==================== STRUKTUR DATABASE (DENGAN FITUR BARU) ====================
+# ==================== STRUKTUR DATABASE ====================
 c.execute('''CREATE TABLE IF NOT EXISTS produk (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
 c.execute('''CREATE TABLE IF NOT EXISTS transaksi_in (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS transaksi_cash (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, harga_jual_satuan REAL, total_harga REAL, uang_bayar REAL, kembalian REAL, laba REAL, tanggal TEXT)''')
@@ -102,7 +102,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREM
 c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
-# TABEL BARU UNTUK FITUR SERAH TERIMA
 c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
 conn.commit()
 
@@ -115,7 +114,6 @@ for sql in [
     "ALTER TABLE kredit ADD COLUMN tanggal_kredit TEXT",
     "ALTER TABLE kredit ADD COLUMN updated_at TEXT",
     "ALTER TABLE kredit ADD COLUMN updated_by TEXT",
-    # KOLOM BARU UNTUK KTP & KK
     "ALTER TABLE customer ADD COLUMN nik TEXT",
     "ALTER TABLE customer ADD COLUMN tanggal_lahir TEXT",
     "ALTER TABLE customer ADD COLUMN status_kawin TEXT",
@@ -205,6 +203,9 @@ def show_flash():
     if st.session_state.get("snow"):
         st.snow(); st.session_state.snow = False
 
+def get_current_time():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 def hitung_harga_cash(harga_modal, markup_persen, harga_jual):
     if harga_jual and float(harga_jual) > 0:
         return float(harga_jual)
@@ -260,6 +261,30 @@ def save_uploaded_file(uploaded_file, prefix):
             f.write(uploaded_file.getbuffer())
         return file_path
     return None
+
+def auto_backup_database():
+    """Fungsi untuk membackup database setiap 5 menit secara otomatis."""
+    now = datetime.now()
+    last_backup_time = st.session_state.get('last_backup_time', datetime.min)
+    if (now - last_backup_time).total_seconds() >= 300: # 300 detik = 5 menit
+        try:
+            timestamp = now.strftime('%Y%m%d_%H%M%S')
+            backup_name = os.path.join(BACKUP_DIR, f"autobackup_{timestamp}.db")
+            shutil.copy2(DB_PATH, backup_name)
+            
+            script_path = os.path.join(BASE_DIR, "toko.py")
+            if os.path.exists(script_path):
+                script_backup = os.path.join(BACKUP_DIR, f"script_autobackup_{timestamp}.py")
+                shutil.copy2(script_path, script_backup)
+                
+            st.session_state['last_backup_time'] = now
+            
+            backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('autobackup_')], reverse=True)
+            for old_b in backups[10:]:
+                try: os.remove(os.path.join(BACKUP_DIR, old_b))
+                except: pass
+        except Exception:
+            pass
 
 # Seed admin
 c.execute("SELECT COUNT(*) FROM users")
@@ -354,7 +379,7 @@ if not st.session_state.logged_in:
         st.info("🔑 Default admin: **admin** / **admin123**")
     st.stop()
 
-# ==================== SIDEBAR (SARAN 7: RADIO) ====================
+# ==================== SIDEBAR ====================
 with st.sidebar:
     st.markdown(f"""
     <div style="text-align:center; padding: 15px 0;">
@@ -374,7 +399,7 @@ with st.sidebar:
         "💰 Pembayaran Cicilan", 
         "🖨️ Cetak Slip Kredit",
         "👥 Data Customer", 
-        "🤝 Serah Terima Barang", # MENU BARU
+        "🤝 Serah Terima Barang",
         "📦 Stok Barang",
         "🚨 Overdue & Denda", 
         "🔔 Alert & Reminder", 
@@ -400,6 +425,8 @@ with st.sidebar:
         st.rerun()
 
 show_flash()
+auto_backup_database()
+
 # ==================== 0. PENGATURAN OWNER ====================
 if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase default toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
@@ -481,7 +508,6 @@ if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
 elif pilihan == "🏠 Dashboard":
     st.markdown(f'<div class="main-header"><h1>🏠 Dashboard Utama</h1><p>Selamat datang kembali, <b>{st.session_state.nama}</b> 👋</p></div>', unsafe_allow_html=True)
 
-    # === FITUR SIMULASI SKEMA ===
     with st.expander("🧮 Simulasi Skema Kredit & Cash (Bisa Diedit)", expanded=True):
         st.markdown("Gunakan kalkulator ini untuk mensimulasikan skema ke customer. Anda bisa mengedit nilai di bawah dan menyembunyikan rincian tertentu untuk *Mode Presentasi Pelanggan*.")
         
@@ -523,7 +549,6 @@ elif pilihan == "🏠 Dashboard":
 
     st.markdown("---")
 
-    # === METRIK UTAMA DASHBOARD ===
     total_produk   = c.execute("SELECT COUNT(*) FROM produk").fetchone()[0]
     total_stok     = c.execute("SELECT COALESCE(SUM(stok),0) FROM produk").fetchone()[0]
     total_customer = c.execute("SELECT COUNT(*) FROM customer").fetchone()[0]
@@ -550,7 +575,6 @@ elif pilihan == "🏠 Dashboard":
     margin_persen = (total_laba / total_pendapatan * 100) if total_pendapatan > 0 else 0
     pakaian_belum_harga = c.execute(f"SELECT COUNT(*) FROM produk WHERE kategori IN ({','.join(['?']*len(PAKAIAN_KATEGORI))}) AND (harga_jual IS NULL OR harga_jual <= 0)", tuple(PAKAIAN_KATEGORI)).fetchone()[0]
     
-    # CEK PENDING SERAH TERIMA
     pending_serah = c.execute("SELECT COUNT(*) FROM kredit WHERE id NOT IN (SELECT kredit_id FROM serah_terima)").fetchone()[0]
 
     html = '<div class="metric-grid">'
@@ -754,6 +778,7 @@ elif pilihan == "📥 Barang Masuk":
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
 
+
 # ==================== 4. JUAL CASH ====================
 elif pilihan == "🛒 Jual Cash":
     st.markdown('<div class="main-header"><h1>🛒 Kasir - Penjualan Tunai (Cash)</h1><p>Masukkan Harga Jual manual, sistem otomatis hitung profit.</p></div>', unsafe_allow_html=True)
@@ -936,94 +961,161 @@ elif pilihan == "🛒 Jual Cash":
                             st.error(f"❌ Gagal: {e}")
             else:
                 st.write("Belum ada data.")
-                # ==================== 5. KREDIT BARU ====================
+
+# ==================== 5. KREDIT BARU (DENGAN FITUR EDIT/DELETE/CANCEL) ====================
 elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Transaksi Kredit Baru</h1></div>', unsafe_allow_html=True)
 
-    bunga_flat_default = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
-    dp_min_persen_default = get_pengaturan_float("dp_minimal_persen", 20.0)
-    tenor_list = get_tenor_list()
+    # SUB-MENU UNTUK EDIT / HAPUS KREDIT
+    tab_input, tab_edit = st.tabs(["➕ Buat Kredit Baru", "✏️ Edit / Hapus / Batalkan Kredit"])
+    
+    with tab_input:
+        bunga_flat_default = get_pengaturan_float("bunga_flat_6bln_persen", 40.0)
+        dp_min_persen_default = get_pengaturan_float("dp_minimal_persen", 20.0)
+        tenor_list = get_tenor_list()
 
-    df_cust = pd.read_sql_query("SELECT id, nama FROM customer ORDER BY nama", conn)
-    df_prod = pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok, COALESCE(markup_persen, 5) as markup_persen, harga_jual FROM produk WHERE stok > 0 ORDER BY nama", conn)
+        df_cust = pd.read_sql_query("SELECT id, nama FROM customer ORDER BY nama", conn)
+        df_prod = pd.read_sql_query("SELECT id, nama, kategori, harga_modal, stok, COALESCE(markup_persen, 5) as markup_persen, harga_jual FROM produk WHERE stok > 0 ORDER BY nama", conn)
 
-    if df_cust.empty or df_prod.empty:
-        st.warning("⚠️ Pastikan Data Customer dan Stok Barang Tersedia!")
-    else:
-        col1, col2 = st.columns(2)
-        with col1:
-            opsi_cust = {f"{r['nama']} (ID: {r['id']})": r['id'] for _, r in df_cust.iterrows()}
-            pilih_c = st.selectbox("👤 Pilih Customer", list(opsi_cust.keys()))
-        with col2:
-            opsi_prod = {f"{r['nama']} (stok: {r['stok']})": (r['id'], r['nama'], r['kategori'], r['harga_modal'], r['markup_persen'], r['harga_jual']) for _, r in df_prod.iterrows()}
-            pilih_p = st.selectbox("📱 Pilih Produk", list(opsi_prod.keys()))
-
-        id_p, nama_p, kat_p, mod_p, mk_p, hj_p = opsi_prod[pilih_p]
-
-        if is_pakaian(kat_p) and (not hj_p or hj_p <= 0):
-            st.error(f"❌ Harga jual untuk **{nama_p}** belum diisi.\n\nBuka menu **📦 Stok Barang** → tab **Edit Harga Jual Pakaian** untuk mengisi harga jual terlebih dahulu.")
-            st.stop()
-
-        h_cash = hitung_harga_cash(mod_p, mk_p, hj_p)
-
-        if is_pakaian(kat_p):
-            st.caption(f"👕 Pakaian — **Harga Jual (manual)**: {format_rp(h_cash)}")
+        if df_cust.empty or df_prod.empty:
+            st.warning("⚠️ Pastikan Data Customer dan Stok Barang Tersedia!")
         else:
-            st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
+            col1, col2 = st.columns(2)
+            with col1:
+                opsi_cust = {f"{r['nama']} (ID: {r['id']})": r['id'] for _, r in df_cust.iterrows()}
+                pilih_c = st.selectbox("👤 Pilih Customer", list(opsi_cust.keys()))
+            with col2:
+                opsi_prod = {f"{r['nama']} (stok: {r['stok']})": (r['id'], r['nama'], r['kategori'], r['harga_modal'], r['markup_persen'], r['harga_jual']) for _, r in df_prod.iterrows()}
+                pilih_p = st.selectbox("📱 Pilih Produk", list(opsi_prod.keys()))
 
-        st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
+            id_p, nama_p, kat_p, mod_p, mk_p, hj_p = opsi_prod[pilih_p]
+
+            if is_pakaian(kat_p) and (not hj_p or hj_p <= 0):
+                st.error(f"❌ Harga jual untuk **{nama_p}** belum diisi.\n\nBuka menu **📦 Stok Barang** → tab **Edit Harga Jual Pakaian** untuk mengisi harga jual terlebih dahulu.")
+                st.stop()
+
+            h_cash = hitung_harga_cash(mod_p, mk_p, hj_p)
+
+            if is_pakaian(kat_p):
+                st.caption(f"👕 Pakaian — **Harga Jual (manual)**: {format_rp(h_cash)}")
+            else:
+                st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
+
+            st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
+            
+            col_dp, col_tenor, col_bunga = st.columns(3)
+            with col_dp:
+                dp_persen = st.number_input("DP (%)", min_value=float(dp_min_persen_default), max_value=100.0, value=float(dp_min_persen_default), step=1.0, help=f"Minimal DP dari Owner adalah {dp_min_persen_default}%")
+            with col_tenor:
+                tenor = st.selectbox("Tenor (Bulan)", tenor_list, index=min(3, len(tenor_list)-1))
+            with col_bunga:
+                bunga_flat = st.number_input("Bunga Flat / 6 Bln (%)", min_value=0.0, value=float(bunga_flat_default), step=1.0, help="Bisa diubah manual jika ada nego bunga")
+
+            dp = round(h_cash * dp_persen / 100, -2)
+            rate = (bunga_flat / 100) / 6
+            bunga_total = rate * tenor
+            pokok = round(h_cash - dp, -2)
+            total = round(pokok * (1 + bunga_total), -2)
+            cicilan = round(total / tenor, -2) if tenor > 0 else 0
+
+            revenue = dp + total
+            laba_transaksi = revenue - mod_p
+            margin_transaksi = (laba_transaksi / revenue * 100) if revenue > 0 else 0
+
+            html = '<div class="metric-grid">'
+            html += metric_card("Harga Cash", format_rp(h_cash), "card-blue")
+            html += metric_card("Nominal DP", format_rp(dp), "card-purple")
+            html += metric_card("Total Hutang", format_rp(total), "card-dark")
+            html += metric_card("Potensi Laba", format_rp(laba_transaksi), "card-green")
+            html += metric_card("Margin (%)", f"{margin_transaksi:.1f}%", "card-orange")
+            html += metric_card("Cicilan / Bulan", format_rp(cicilan), "card-pink")
+            html += '</div>'
+            st.markdown(html, unsafe_allow_html=True)
+            st.caption(f"⚙️ Bunga transaksi ini: **{bunga_flat:.1f}% / 6 bulan** → tenor {tenor} bln = {bunga_total*100:.1f}%")
+
+            cek = c.execute("SELECT COUNT(*) FROM kredit WHERE customer_id=? AND status='Berjalan'", (opsi_cust[pilih_c],)).fetchone()[0]
+            if cek > 0:
+                st.warning(f"⚠️ Customer ini punya {cek} kredit aktif. Pastikan tidak menumpuk!")
+
+            if st.button("✅ Proses Kredit & Keluarkan Barang"):
+                id_c = opsi_cust[pilih_c]
+                tgl_kredit = datetime.now().strftime("%Y-%m-%d")
+                tgl_tempo = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                try:
+                    c.execute('''INSERT INTO kredit (customer_id, produk_id, harga_cash, dp, pokok_hutang, total_hutang, tenor, cicilan_bulan, sisa_hutang, jatuh_tempo, status, tanggal_kredit, updated_at, updated_by) 
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                              (id_c, id_p, h_cash, dp, pokok, total, tenor, cicilan, total, tgl_tempo, "Berjalan", tgl_kredit, get_current_time(), st.session_state.username))
+                    c.execute("UPDATE produk SET stok = stok - 1 WHERE id = ?", (id_p,))
+                    conn.commit()
+                    log_aksi(st.session_state.username, "KREDIT_BARU", f"Customer {pilih_c}, Produk {pilih_p}")
+                    flash("🎉 Akad kredit berhasil! Silakan buka menu **🖨️ Cetak Slip Kredit** untuk mencetak invoice.", "success")
+                    st.session_state.balloons = True
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal menyimpan kredit: {e}")
+
+    with tab_edit:
+        st.subheader("Edit / Hapus / Batalkan Kredit")
+        st.info("Gunakan tab ini jika ada kesalahan input data kredit. Menghapus data akan mengembalikan stok barang.")
         
-        col_dp, col_tenor, col_bunga = st.columns(3)
-        with col_dp:
-            dp_persen = st.number_input("DP (%)", min_value=float(dp_min_persen_default), max_value=100.0, value=float(dp_min_persen_default), step=1.0, help=f"Minimal DP dari Owner adalah {dp_min_persen_default}%")
-        with col_tenor:
-            tenor = st.selectbox("Tenor (Bulan)", tenor_list, index=min(3, len(tenor_list)-1))
-        with col_bunga:
-            bunga_flat = st.number_input("Bunga Flat / 6 Bln (%)", min_value=0.0, value=float(bunga_flat_default), step=1.0, help="Bisa diubah manual jika ada nego bunga")
+        df_kredit_all = pd.read_sql_query("""
+            SELECT k.id, c.nama as customer, p.nama as produk, k.status, k.total_hutang
+            FROM kredit k JOIN customer c ON k.customer_id = c.id JOIN produk p ON k.produk_id = p.id
+            ORDER BY k.id DESC
+        """, conn)
+        
+        if not df_kredit_all.empty:
+            opsi_kredit = {f"#{r['id']} - {r['customer']} - {r['produk']} ({r['status']})": r['id'] for _, r in df_kredit_all.iterrows()}
+            pilih_kredit = st.selectbox("Pilih Kredit yang akan diedit/dihapus", list(opsi_kredit.keys()))
+            kid = opsi_kredit[pilih_kredit]
+            
+            d = pd.read_sql_query("SELECT * FROM kredit WHERE id=?", conn, params=(kid,)).iloc[0]
+            
+            with st.form("form_edit_kredit_baru"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    m_harga_cash = st.number_input("Harga Cash", value=float(d['harga_cash']), step=10000.0)
+                    m_dp = st.number_input("DP", value=float(d['dp']), step=10000.0)
+                    m_status = st.selectbox("Status Kredit", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(d['status']))
+                with col2:
+                    m_total = st.number_input("Total Hutang", value=float(d['total_hutang']), step=10000.0)
+                    m_cicilan = st.number_input("Cicilan / Bulan", value=float(d['cicilan_bulan']), step=10000.0)
+                    m_tenor = st.number_input("Tenor (Bulan)", value=int(d['tenor']), min_value=1)
+                
+                submit_edit = st.form_submit_button("💾 Simpan Perubahan")
+                if submit_edit:
+                    try:
+                        c.execute("UPDATE kredit SET harga_cash=?, dp=?, total_hutang=?, cicilan_bulan=?, tenor=?, status=? WHERE id=?", 
+                                  (m_harga_cash, m_dp, m_total, m_cicilan, m_tenor, m_status, kid))
+                        conn.commit()
+                        flash("✅ Data Kredit berhasil diupdate!", "success")
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"❌ Gagal: {e}")
+                        
+            if st.button("🗑️ Hapus Kredit & Kembalikan Stok", type="primary"):
+                try:
+                    produk_id = d['produk_id']
+                    # Kembalikan stok
+                    c.execute("UPDATE produk SET stok = stok + 1 WHERE id = ?", (produk_id,))
+                    # Hapus riwayat pembayaran terkait
+                    c.execute("DELETE FROM pembayaran WHERE kredit_id = ?", (kid,))
+                    # Hapus serah terima terkait
+                    c.execute("DELETE FROM serah_terima WHERE kredit_id = ?", (kid,))
+                    # Hapus kredit
+                    c.execute("DELETE FROM kredit WHERE id = ?", (kid,))
+                    conn.commit()
+                    flash("🗑️ Kredit berhasil dihapus dan stok telah dikembalikan!", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal menghapus: {e}")
+        else:
+            st.info("Belum ada data kredit.")
 
-        dp = round(h_cash * dp_persen / 100, -2)
-        rate = (bunga_flat / 100) / 6
-        bunga_total = rate * tenor
-        pokok = round(h_cash - dp, -2)
-        total = round(pokok * (1 + bunga_total), -2)
-        cicilan = round(total / tenor, -2) if tenor > 0 else 0
 
-        revenue = dp + total
-        laba_transaksi = revenue - mod_p
-        margin_transaksi = (laba_transaksi / revenue * 100) if revenue > 0 else 0
-
-        html = '<div class="metric-grid">'
-        html += metric_card("Harga Cash", format_rp(h_cash), "card-blue")
-        html += metric_card("Nominal DP", format_rp(dp), "card-purple")
-        html += metric_card("Total Hutang", format_rp(total), "card-dark")
-        html += metric_card("Potensi Laba", format_rp(laba_transaksi), "card-green")
-        html += metric_card("Margin (%)", f"{margin_transaksi:.1f}%", "card-orange")
-        html += metric_card("Cicilan / Bulan", format_rp(cicilan), "card-pink")
-        html += '</div>'
-        st.markdown(html, unsafe_allow_html=True)
-        st.caption(f"⚙️ Bunga transaksi ini: **{bunga_flat:.1f}% / 6 bulan** → tenor {tenor} bln = {bunga_total*100:.1f}%")
-
-        cek = c.execute("SELECT COUNT(*) FROM kredit WHERE customer_id=? AND status='Berjalan'", (opsi_cust[pilih_c],)).fetchone()[0]
-        if cek > 0:
-            st.warning(f"⚠️ Customer ini punya {cek} kredit aktif. Pastikan tidak menumpuk!")
-
-        if st.button("✅ Proses Kredit & Keluarkan Barang"):
-            id_c = opsi_cust[pilih_c]
-            tgl_kredit = datetime.now().strftime("%Y-%m-%d")
-            tgl_tempo = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-            try:
-                c.execute('''INSERT INTO kredit (customer_id, produk_id, harga_cash, dp, pokok_hutang, total_hutang, tenor, cicilan_bulan, sisa_hutang, jatuh_tempo, status, tanggal_kredit, updated_at, updated_by) 
-                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                          (id_c, id_p, h_cash, dp, pokok, total, tenor, cicilan, total, tgl_tempo, "Berjalan", tgl_kredit, get_current_time(), st.session_state.username))
-                c.execute("UPDATE produk SET stok = stok - 1 WHERE id = ?", (id_p,))
-                conn.commit()
-                log_aksi(st.session_state.username, "KREDIT_BARU", f"Customer {pilih_c}, Produk {pilih_p}")
-                flash("🎉 Akad kredit berhasil! Silakan buka menu **🖨️ Cetak Slip Kredit** untuk mencetak invoice.", "success")
-                st.session_state.balloons = True
-                st.rerun()
-            except Exception as e:
-                conn.rollback()
-                st.error(f"❌ Gagal menyimpan kredit: {e}")
 
 # ==================== 6. PEMBAYARAN CICILAN ====================
 elif pilihan == "💰 Pembayaran Cicilan":
@@ -1163,13 +1255,15 @@ elif pilihan == "👥 Data Customer":
                 st.write(f"**NIK:** {detail_c['nik']}")
                 col_img1, col_img2 = st.columns(2)
                 with col_img1:
-                    if detail_c['foto_ktp'] and os.path.exists(detail_c['foto_ktp']):
-                        st.image(detail_c['foto_ktp'], caption="Foto KTP", use_column_width=True)
+                    foto_ktp_val = detail_c['foto_ktp']
+                    if foto_ktp_val is not None and str(foto_ktp_val) not in ["None", ""] and os.path.exists(str(foto_ktp_val)):
+                        st.image(foto_ktp_val, caption="Foto KTP", use_column_width=True)
                     else:
                         st.info("Belum ada foto KTP.")
                 with col_img2:
-                    if detail_c['foto_kk'] and os.path.exists(detail_c['foto_kk']):
-                        st.image(detail_c['foto_kk'], caption="Foto KK", use_column_width=True)
+                    foto_kk_val = detail_c['foto_kk']
+                    if foto_kk_val is not None and str(foto_kk_val) not in ["None", ""] and os.path.exists(str(foto_kk_val)):
+                        st.image(foto_kk_val, caption="Foto KK", use_column_width=True)
                     else:
                         st.info("Belum ada foto KK.")
 
@@ -1243,7 +1337,6 @@ elif pilihan == "👥 Data Customer":
 elif pilihan == "🤝 Serah Terima Barang":
     st.markdown('<div class="main-header"><h1>🤝 Berita Acara Serah Terima</h1><p>Mencegah pelanggan kabur & bukti sah</p></div>', unsafe_allow_html=True)
     
-    # Hanya tampilkan kredit yang belum ada di tabel serah_terima
     df_kredit_aktif = pd.read_sql_query("""
         SELECT k.id, c.nama as customer, p.nama as produk 
         FROM kredit k 
@@ -1301,10 +1394,12 @@ elif pilihan == "🤝 Serah Terima Barang":
         for _, r in df_riwayat.iterrows():
             with st.expander(f"📅 {r['tanggal_serah']} - {r['customer']} (IMEI: {r['imei']})"):
                 st.write(f"**Penerima:** {r['penerima']}")
-                if r['foto_bukti'] and os.path.exists(r['foto_bukti']):
-                    st.image(r['foto_bukti'], caption="Bukti Serah Terima", width=400)
+                foto_bukti_val = r['foto_bukti']
+                if foto_bukti_val is not None and str(foto_bukti_val) not in ["None", ""] and os.path.exists(str(foto_bukti_val)):
+                    st.image(foto_bukti_val, caption="Bukti Serah Terima", width=400)
     else:
         st.info("Belum ada riwayat serah terima.")
+
 
 # ==================== 9. STOK BARANG ====================
 elif pilihan == "📦 Stok Barang":
@@ -1357,7 +1452,8 @@ elif pilihan == "📦 Stok Barang":
                     except Exception as e:
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
-                        # ==================== 10. CETAK SLIP KREDIT (FULL HTML) ====================
+
+# ==================== 10. CETAK SLIP KREDIT (FULL HTML) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional sesuai standar OJK</p></div>', unsafe_allow_html=True)
 
@@ -1908,76 +2004,8 @@ elif pilihan == "🚨 Overdue & Denda":
                 st.write(f"**Denda ({denda_persen}%/hari):** {format_rp(denda)}")
                 st.error("Segera hubungi customer untuk penagihan!")
 
-# ==================== 12. LAPORAN & ANALITIK ====================
-elif pilihan == "📊 Laporan & Analitik":
-    st.markdown('<div class="main-header"><h1>📊 Laporan & Analitik</h1></div>', unsafe_allow_html=True)
-    st.info("Fitur ini menyajikan data visual performa toko.")
-    
-    tab1, tab2 = st.tabs(["📈 Ringkasan", "📑 Export Data"])
-    
-    with tab1:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Distribusi Status Kredit**")
-            df_status = pd.read_sql_query("SELECT status, COUNT(*) as jumlah FROM kredit GROUP BY status", conn)
-            if not df_status.empty:
-                st.bar_chart(df_status.set_index('status'))
-                
-        with col2:
-            st.markdown("**Pendapatan per Bulan (Cash + Cicilan)**")
-            df_pendapatan = pd.read_sql_query("""
-                SELECT substr(tanggal,1,7) as bulan, SUM(total_harga) as total_cash FROM transaksi_cash GROUP BY bulan
-            """, conn)
-            if not df_pendapatan.empty:
-                st.line_chart(df_pendapatan.set_index('bulan'))
-                
-    with tab2:
-        st.subheader("Export Laporan ke Excel")
-        if st.button("Generate Laporan Excel"):
-            try:
-                df_invoice = pd.read_sql_query("SELECT * FROM kredit", conn)
-                df_pelanggan = pd.read_sql_query("SELECT * FROM customer", conn)
-                df_serah = pd.read_sql_query("SELECT * FROM serah_terima", conn)
-                
-                buffer = io.BytesIO()
-                # PERBAIKAN ERROR MODULENOTFOUND: Menggunakan xlsxwriter
-                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                    df_invoice.to_excel(writer, sheet_name='Data Invoice', index=False)
-                    df_pelanggan.to_excel(writer, sheet_name='Data Pelanggan', index=False)
-                    df_serah.to_excel(writer, sheet_name='Serah Terima', index=False)
-                
-                st.download_button(
-                    label="⬇️ Download Laporan Lengkap (.xlsx)",
-                    data=buffer.getvalue(),
-                    file_name=f"Laporan_GraceStore_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            except Exception as e:
-                st.error(f"❌ Gagal membuat Excel: {e}")
 
-# ==================== 13. MODAL VS PROFIT ====================
-elif pilihan == "👕 Modal vs Profit":
-    st.markdown('<div class="main-header"><h1>👕 Laporan Modal vs Profit Pakaian</h1></div>', unsafe_allow_html=True)
-    df_pk = pd.read_sql_query("SELECT nama, kategori, harga_modal, harga_jual FROM produk WHERE kategori IN ('Pakaian', 'Atasan', 'Bawahan', 'Dress', 'Outerwear', 'Batik')", conn)
-    
-    if df_pk.empty:
-        st.info("Belum ada data produk pakaian.")
-    else:
-        # PERBAIKAN ERROR PANDAS: Pastikan kolom numerik dan tangani NaN
-        df_pk['harga_modal'] = pd.to_numeric(df_pk['harga_modal'], errors='coerce').fillna(0)
-        df_pk['harga_jual'] = pd.to_numeric(df_pk['harga_jual'], errors='coerce').fillna(0)
-        
-        # Hitung Profit
-        df_pk['profit'] = df_pk['harga_jual'] - df_pk['harga_modal']
-        
-        # Format ke Rupiah (Safe)
-        df_pk['harga_modal'] = df_pk['harga_modal'].apply(format_rp)
-        df_pk['harga_jual'] = df_pk['harga_jual'].apply(lambda x: format_rp(x) if x > 0 else "Belum diset")
-        df_pk['profit'] = df_pk['profit'].apply(lambda x: format_rp(x) if x != 0 else "-")
-        
-        st.dataframe(df_pk, use_container_width=True, hide_index=True)
-        st.caption("Catatan: Produk dengan harga jual 'Belum diset' tidak akan bisa dijual secara kredit sampai harganya diisi di menu Stok Barang.")
-        # ==================== 14. ALERT & REMINDER ====================
+# ==================== 12. ALERT & REMINDER ====================
 elif pilihan == "🔔 Alert & Reminder":
     st.markdown('<div class="main-header"><h1>🔔 Alert & Reminder</h1><p>Pusat notifikasi tagihan dan pengingat</p></div>', unsafe_allow_html=True)
     
@@ -2035,6 +2063,72 @@ elif pilihan == "🔔 Alert & Reminder":
             st.error(f"🚨 Ada **{len(df_kritis)}** produk dengan stok kritis (≤ 3 unit). Segera lakukan restock!")
             st.dataframe(df_kritis, use_container_width=True, hide_index=True)
 
+# ==================== 13. LAPORAN & ANALITIK ====================
+elif pilihan == "📊 Laporan & Analitik":
+    st.markdown('<div class="main-header"><h1>📊 Laporan & Analitik</h1></div>', unsafe_allow_html=True)
+    st.info("Fitur ini menyajikan data visual performa toko.")
+    
+    tab1, tab2 = st.tabs(["📈 Ringkasan", "📑 Export Data"])
+    
+    with tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Distribusi Status Kredit**")
+            df_status = pd.read_sql_query("SELECT status, COUNT(*) as jumlah FROM kredit GROUP BY status", conn)
+            if not df_status.empty:
+                st.bar_chart(df_status.set_index('status'))
+                
+        with col2:
+            st.markdown("**Pendapatan per Bulan (Cash + Cicilan)**")
+            df_pendapatan = pd.read_sql_query("""
+                SELECT substr(tanggal,1,7) as bulan, SUM(total_harga) as total_cash FROM transaksi_cash GROUP BY bulan
+            """, conn)
+            if not df_pendapatan.empty:
+                st.line_chart(df_pendapatan.set_index('bulan'))
+                
+    with tab2:
+        st.subheader("Export Laporan ke Excel")
+        if st.button("Generate Laporan Excel"):
+            try:
+                df_invoice = pd.read_sql_query("SELECT * FROM kredit", conn)
+                df_pelanggan = pd.read_sql_query("SELECT * FROM customer", conn)
+                df_serah = pd.read_sql_query("SELECT * FROM serah_terima", conn)
+                
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_invoice.to_excel(writer, sheet_name='Data Invoice', index=False)
+                    df_pelanggan.to_excel(writer, sheet_name='Data Pelanggan', index=False)
+                    df_serah.to_excel(writer, sheet_name='Serah Terima', index=False)
+                
+                st.download_button(
+                    label="⬇️ Download Laporan Lengkap (.xlsx)",
+                    data=buffer.getvalue(),
+                    file_name=f"Laporan_GraceStore_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception as e:
+                st.error(f"❌ Gagal membuat Excel: {e}")
+
+# ==================== 14. MODAL VS PROFIT ====================
+elif pilihan == "👕 Modal vs Profit":
+    st.markdown('<div class="main-header"><h1>👕 Laporan Modal vs Profit Pakaian</h1></div>', unsafe_allow_html=True)
+    df_pk = pd.read_sql_query("SELECT nama, kategori, harga_modal, harga_jual FROM produk WHERE kategori IN ('Pakaian', 'Atasan', 'Bawahan', 'Dress', 'Outerwear', 'Batik')", conn)
+    
+    if df_pk.empty:
+        st.info("Belum ada data produk pakaian.")
+    else:
+        df_pk['harga_modal'] = pd.to_numeric(df_pk['harga_modal'], errors='coerce').fillna(0)
+        df_pk['harga_jual'] = pd.to_numeric(df_pk['harga_jual'], errors='coerce').fillna(0)
+        
+        df_pk['profit'] = df_pk['harga_jual'] - df_pk['harga_modal']
+        
+        df_pk['harga_modal'] = df_pk['harga_modal'].apply(format_rp)
+        df_pk['harga_jual'] = df_pk['harga_jual'].apply(lambda x: format_rp(x) if x > 0 else "Belum diset")
+        df_pk['profit'] = df_pk['profit'].apply(lambda x: format_rp(x) if x != 0 else "-")
+        
+        st.dataframe(df_pk, use_container_width=True, hide_index=True)
+        st.caption("Catatan: Produk dengan harga jual 'Belum diset' tidak akan bisa dijual secara kredit sampai harganya diisi di menu Stok Barang.")
+
 # ==================== 15. BACKUP, CETAK & IMPOR ====================
 elif pilihan == "💾 Backup, Cetak & Impor":
     st.markdown('<div class="main-header"><h1>💾 Backup, Cetak & Impor</h1></div>', unsafe_allow_html=True)
@@ -2046,7 +2140,6 @@ elif pilihan == "💾 Backup, Cetak & Impor":
         st.warning("⚠️ **PENTING:** Simpan file `.db` ini ke tempat aman (Google Drive / Flashdisk) secara berkala untuk mencegah kehilangan data.")
         
         try:
-            # Membaca file database untuk diunduh
             with open(DB_PATH, "rb") as f:
                 db_bytes = f.read()
             
@@ -2068,19 +2161,18 @@ elif pilihan == "💾 Backup, Cetak & Impor":
             list_backup = sorted(os.listdir(BACKUP_DIR), reverse=True)
             if list_backup:
                 st.write("**Daftar Backup Otomatis Tersedia:**")
-                for b in list_backup[:5]: # Tampilkan 5 terbaru
+                for b in list_backup[:5]:
                     st.write(f"- `{b}`")
             else:
                 st.write("Belum ada backup otomatis.")
 
     with tab_excel:
         st.subheader("Cetak Laporan Lengkap ke Excel")
-        st.info("Fitur ini menggunakan `xlsxwriter` untuk menghasilkan file Excel multi-sheet (Invoice, Customer, Serah Terima) yang rapi.")
+        st.info("Fitur ini menggunakan `xlsxwriter` untuk menghasilkan file Excel multi-sheet yang rapi.")
         
         if st.button("📊 Generate Laporan Excel", use_container_width=True):
             try:
                 df_invoice = pd.read_sql_query("SELECT * FROM kredit", conn)
-                # Pastikan tipe data aman untuk Excel
                 if not df_invoice.empty:
                     df_invoice['total_hutang'] = pd.to_numeric(df_invoice['total_hutang'], errors='coerce').fillna(0)
                     
@@ -2089,7 +2181,6 @@ elif pilihan == "💾 Backup, Cetak & Impor":
                 df_cash = pd.read_sql_query("SELECT * FROM transaksi_cash", conn)
                 
                 buffer = io.BytesIO()
-                # Menggunakan engine xlsxwriter
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     df_invoice.to_excel(writer, sheet_name='Data Kredit', index=False)
                     df_cash.to_excel(writer, sheet_name='Data Jual Cash', index=False)
@@ -2187,4 +2278,3 @@ elif pilihan == "📝 Log Aktivitas" and st.session_state.role == "admin":
         
     if st.button("🔄 Refresh Log"):
         st.rerun()
-        
