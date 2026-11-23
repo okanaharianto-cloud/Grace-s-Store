@@ -974,7 +974,7 @@ elif pilihan == "🏠 Dashboard":
         html_sim += '</div>'
         st.markdown(html_sim, unsafe_allow_html=True)
 
-    st.markdown("---")
+        st.markdown("---")
 
     total_produk   = c.execute("SELECT COUNT(*) FROM produk").fetchone()[0]
     total_stok     = c.execute("SELECT COALESCE(SUM(stok),0) FROM produk").fetchone()[0]
@@ -1159,12 +1159,12 @@ elif pilihan == "📥 Barang Masuk":
                 conn.rollback()
                 st.error(f"❌ Gagal: {e}")
 
-        st.markdown('<div class="section-header"><h3>📜 Riwayat Barang Masuk Terakhir</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h3>📜 Riwayat Barang Masuk Terakhir</h3></div>', unsafe_allow_html=True)
         df_in = pd.read_sql_query("SELECT t.id, t.produk_id, p.nama as produk, t.jumlah, t.tanggal FROM transaksi_in t JOIN produk p ON t.produk_id = p.id ORDER BY t.id DESC LIMIT 20", conn)
         st.dataframe(df_in.drop(columns=['id', 'produk_id']), use_container_width=True, hide_index=True)
         
         if not df_in.empty:
-            st.markdown("**✏️ Edit / Hapus Barang Masuk**")
+    st.markdown("**✏️ Edit / Hapus Barang Masuk**")
             opsi_in = {f"ID #{r['id']} - {r['produk']} - {r['jumlah']} unit ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah'], r['tanggal']) for _, r in df_in.iterrows()}
             pilih_in = st.selectbox("Pilih Riwayat Barang Masuk", list(opsi_in.keys()), key="sel_edit_in")
             id_in, pid_in, qty_in, tgl_in = opsi_in[pilih_in]
@@ -1216,7 +1216,7 @@ elif pilihan == "🛒 Jual Cash":
         col1, col2 = st.columns([1.2, 1])
         
         with col1:
-            st.markdown('<div class="section-header"><h3>💵 Input Transaksi</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h3>💵 Input Transaksi</h3></div>', unsafe_allow_html=True)
             
             opsi_prod = {f"{r['nama']} | Modal: {format_rp(r['harga_modal'])} | Sisa: {r['stok']}": (r['id'], r['nama'], r['kategori'], r['harga_modal'], r['markup_persen'], r['harga_jual'], r['stok']) for _, r in df_prod.iterrows()}
             pilih_p = st.selectbox("📱 Pilih Produk", list(opsi_prod.keys()))
@@ -1243,7 +1243,7 @@ elif pilihan == "🛒 Jual Cash":
                 profit_satuan = harga_jual_input - mod_p
                 total_profit = profit_satuan * jumlah_beli
                 
-                st.markdown(f"### Total Belanja: **{format_rp(total_belanja)}**")
+    st.markdown(f"### Total Belanja: **{format_rp(total_belanja)}**")
                 
                 if profit_satuan < 0:
                     st.error(f"⚠️ **RUGI!** Anda menjual di bawah modal. (Rugi: {format_rp(abs(total_profit))})")
@@ -1279,7 +1279,7 @@ elif pilihan == "🛒 Jual Cash":
                             st.error(f"❌ Gagal: {e}")
 
         with col2:
-            st.markdown('<div class="section-header"><h3>🧾 Struk Transaksi Terakhir</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h3>🧾 Struk Transaksi Terakhir</h3></div>', unsafe_allow_html=True)
             df_riw = pd.read_sql_query("""
                 SELECT t.id, t.tanggal, p.nama as produk, t.jumlah, t.harga_jual_satuan, t.total_harga, t.uang_bayar, t.kembalian, t.laba 
                 FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id 
@@ -1288,7 +1288,7 @@ elif pilihan == "🛒 Jual Cash":
             
             if not df_riw.empty:
                 r = df_riw.iloc[0]
-                st.markdown(f"""
+    st.markdown(f"""
                 <div style="border: 1px dashed #ccc; padding: 20px; border-radius: 10px; background-color: white; color: #333;">
                     <h3 style="text-align: center; margin-bottom: 0; color:#667eea;">GRACE STORE</h3>
                     <p style="text-align: center; font-size: 12px; color: #666;">{r['tanggal']}</p>
@@ -1311,7 +1311,7 @@ elif pilihan == "🛒 Jual Cash":
             else:
                 st.info("Belum ada transaksi tunai pada sesi ini.")
                 
-            st.markdown('<div class="section-header"><h3>📜 Riwayat Jual Cash (5 Terakhir)</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h3>📜 Riwayat Jual Cash (5 Terakhir)</h3></div>', unsafe_allow_html=True)
             df_riw_all = pd.read_sql_query("""
                 SELECT t.id, t.produk_id, t.tanggal, p.nama as produk, t.jumlah, t.harga_jual_satuan, t.uang_bayar, t.total_harga, t.laba 
                 FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id 
@@ -1325,7 +1325,7 @@ elif pilihan == "🛒 Jual Cash":
                 df_show = df_show.rename(columns={'tanggal':'Tanggal', 'produk':'Produk', 'jumlah':'Qty', 'total_harga':'Total Jual', 'laba':'Profit'})
                 st.dataframe(df_show, use_container_width=True, hide_index=True)
                 
-                st.markdown("**🗑️ Hapus Transaksi & Kembalikan Stok**")
+ st.markdown("**🗑️ Hapus Transaksi & Kembalikan Stok**")
                 opsi_hapus = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah']) for _, r in df_riw_all.iterrows()}
                 pilih_hapus = st.selectbox("Pilih transaksi yang ingin dihapus:", list(opsi_hapus.keys()))
                 
@@ -1342,7 +1342,7 @@ elif pilihan == "🛒 Jual Cash":
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
 
-                st.markdown("**✏️ Edit Harga / Jumlah / Nominal Transaksi**")
+    st.markdown("**✏️ Edit Harga / Jumlah / Nominal Transaksi**")
                 opsi_edit_cash = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": r['id'] for _, r in df_riw_all.iterrows()}
                 pilih_edit_cash = st.selectbox("Pilih transaksi untuk diedit:", list(opsi_edit_cash.keys()), key="sel_edit_cash")
                 id_edit_cash = opsi_edit_cash[pilih_edit_cash]
@@ -1426,7 +1426,7 @@ elif pilihan == "📤 Kredit Baru":
             else:
                 st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
 
-            st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
             
             col_dp, col_tenor, col_bunga = st.columns(3)
             with col_dp:
@@ -1455,7 +1455,7 @@ elif pilihan == "📤 Kredit Baru":
             html += metric_card("Margin (%)", f"{margin_transaksi:.1f}%", "card-orange")
             html += metric_card("Cicilan / Bulan", format_rp(cicilan), "card-pink")
             html += '</div>'
-            st.markdown(html, unsafe_allow_html=True)
+    st.markdown(html, unsafe_allow_html=True)
             st.caption(f"⚙️ Bunga transaksi ini: **{bunga_flat:.1f}% / 6 bulan** → tenor {tenor} bln = {bunga_total*100:.1f}%")
 
             cek = c.execute("SELECT COUNT(*) FROM kredit WHERE customer_id=? AND status='Berjalan'", (opsi_cust[pilih_c],)).fetchone()[0]
@@ -1570,9 +1570,9 @@ elif pilihan == "💰 Pembayaran Cicilan":
         html += metric_card("Hari Telat", f"{max(hari_telat,0)} hari", "card-pink" if hari_telat > 0 else "card-green")
         html += metric_card(f"Denda ({denda_persen:.2f}%/hari)", format_rp(denda), "card-pink")
         html += '</div>'
-        st.markdown(html, unsafe_allow_html=True)
+ st.markdown(html, unsafe_allow_html=True)
 
-        st.markdown('<div class="section-header"><h3>💵 Input Pembayaran</h3></div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header"><h3>💵 Input Pembayaran</h3></div>', unsafe_allow_html=True)
         total_bayar_default = detail['cicilan_bulan'] + denda
         col1, col2 = st.columns(2)
         with col1:
