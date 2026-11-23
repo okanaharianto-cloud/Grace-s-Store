@@ -426,7 +426,434 @@ with st.sidebar:
 
 show_flash()
 auto_backup_database()
+import streamlit as st
+import pandas as pd
+import sqlite3
+import hashlib
+import os
+import shutil
+import uuid
+import io
+from datetime import datetime, timedelta
+import altair as alt
+import streamlit.components.v1 as components
+from PIL import Image
 
+# ==================== KONFIGURASI HALAMAN ====================
+st.set_page_config(
+    page_title="GRACE'S STORE (CASH & CREDIT)",
+    page_icon="🏪",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ==================== CUSTOM CSS ====================
+st.markdown("""
+<style>
+    .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 25px; border-radius: 15px; color: white; text-align: center;
+        margin-bottom: 25px; box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+    .main-header h1 { color: white !important; margin: 0; font-size: 2.2em; }
+    .main-header p { color: #f0f0f0; margin: 5px 0 0 0; }
+    .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .metric-card { padding: 20px; border-radius: 15px; color: white; box-shadow: 0 6px 15px rgba(0,0,0,0.15); transition: transform 0.2s; }
+    .metric-card:hover { transform: translateY(-4px); }
+    .metric-card .label { font-size: 0.85em; opacity: 0.9; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .metric-card .value { font-size: 1.6em; font-weight: bold; }
+    .card-blue { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+    .card-purple { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .card-pink { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .card-green { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+    .card-orange { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+    .card-dark { background: linear-gradient(135deg, #232526 0%, #414345 100%); }
+    .section-header { background: white; padding: 15px 20px; border-radius: 12px; border-left: 5px solid #667eea; margin: 20px 0 15px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .section-header h3 { margin: 0; color: #333; }
+    section[data-testid="stSidebar"] { background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%); }
+    section[data-testid="stSidebar"] * { color: #ecf0f1 !important; }
+    .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; border: none; border-radius: 10px; padding: 10px 20px; font-weight: 600; transition: all 0.3s; width: 100%; }
+    .stButton > button:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(102,126,234,0.5); }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] { background: white; border-radius: 10px 10px 0 0; padding: 10px 20px; font-weight: 600; }
+    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# ==================== KONSTANTA ====================
+PAKAIAN_KATEGORI = ["Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik"]
+SEMUA_KATEGORI = ["Gadget", "Elektronik", "Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik", "Furnitur", "Motor", "Lainnya"]
+ALAMAT_TOKO = "Jl. Barong Tongkok, Kutai Barat"
+UPLOAD_DIR = "uploads"
+
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+def is_pakaian(kat):
+    return kat in PAKAIAN_KATEGORI
+
+# ==================== KONEKSI DATABASE ====================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "toko_kredit.db")
+BACKUP_DIR = os.path.join(BASE_DIR, "backups")
+
+if not os.path.exists(BACKUP_DIR):
+    os.makedirs(BACKUP_DIR)
+    
+# Backup harian
+backup_file = os.path.join(BACKUP_DIR, f"backup_{datetime.now().strftime('%Y%m%d')}.db")
+if os.path.exists(DB_PATH) and not os.path.exists(backup_file):
+    try:
+        shutil.copy2(DB_PATH, backup_file)
+    except Exception:
+        pass
+
+@st.cache_resource
+def get_connection():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
+conn = get_connection()
+c = conn.cursor()
+
+# ==================== STRUKTUR DATABASE ====================
+c.execute('''CREATE TABLE IF NOT EXISTS produk (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
+c.execute('''CREATE TABLE IF NOT EXISTS transaksi_in (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS transaksi_cash (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, harga_jual_satuan REAL, total_harga REAL, uang_bayar REAL, kembalian REAL, laba REAL, tanggal TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS customer (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, telepon TEXT, alamat TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS kredit (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, produk_id INTEGER, harga_cash REAL, dp REAL, pokok_hutang REAL, total_hutang REAL, tenor INTEGER, cicilan_bulan REAL, sisa_hutang REAL, jatuh_tempo TEXT, status TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS pembayaran (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, jumlah_bayar REAL, denda REAL, tanggal TEXT, keterangan TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
+c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
+c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
+conn.commit()
+
+# ==================== MIGRASI KOLOM ====================
+for sql in [
+    "ALTER TABLE produk ADD COLUMN markup_persen REAL DEFAULT 5.0",
+    "ALTER TABLE produk ADD COLUMN harga_jual REAL",
+    "ALTER TABLE transaksi_cash ADD COLUMN harga_jual_satuan REAL DEFAULT 0",
+    "ALTER TABLE transaksi_cash ADD COLUMN laba REAL DEFAULT 0",
+    "ALTER TABLE kredit ADD COLUMN tanggal_kredit TEXT",
+    "ALTER TABLE kredit ADD COLUMN updated_at TEXT",
+    "ALTER TABLE kredit ADD COLUMN updated_by TEXT",
+    "ALTER TABLE customer ADD COLUMN nik TEXT",
+    "ALTER TABLE customer ADD COLUMN tanggal_lahir TEXT",
+    "ALTER TABLE customer ADD COLUMN status_kawin TEXT",
+    "ALTER TABLE customer ADD COLUMN foto_ktp TEXT",
+    "ALTER TABLE customer ADD COLUMN foto_kk TEXT"
+]:
+    try:
+        c.execute(sql); conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+try:
+    c.execute("UPDATE kredit SET tanggal_kredit = date(jatuh_tempo, '-30 days') WHERE tanggal_kredit IS NULL")
+    conn.commit()
+except Exception:
+    pass
+
+# ==================== SEED PENGATURAN DEFAULT ====================
+DEFAULT_PENGATURAN = {
+    "markup_default_persen":     ("5.0",   "Markup default (%) untuk produk non-pakaian"),
+    "bunga_flat_6bln_persen":    ("40.0",  "Bunga flat per 6 bulan (%) untuk kredit"),
+    "dp_minimal_persen":         ("20.0",  "DP minimal (%) dari harga cash"),
+    "denda_per_hari_persen":     ("0.4",   "Denda keterlambatan per hari (%) dari cicilan"),
+    "tenor_options":             ("1,2,3,6,12,18,24", "Pilihan tenor (bulan), pisahkan dengan koma"),
+}
+for k, (v, ket) in DEFAULT_PENGATURAN.items():
+    c.execute("INSERT OR IGNORE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)", (k, v, ket))
+conn.commit()
+
+# ==================== HELPER FUNCTIONS ====================
+def hash_password(p):
+    return hashlib.sha256(p.encode()).hexdigest()
+
+def format_rp(n):
+    try:
+        return f"Rp {float(n):,.0f}".replace(",", ".")
+    except Exception:
+        return "Rp 0"
+
+def get_pengaturan(kunci, default=None):
+    cache_key = f"_setting_{kunci}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    row = c.execute("SELECT nilai FROM pengaturan WHERE kunci=?", (kunci,)).fetchone()
+    val = row[0] if row else default
+    st.session_state[cache_key] = val
+    return val
+
+def get_pengaturan_float(kunci, default=0.0):
+    try:
+        return float(get_pengaturan(kunci, default))
+    except (ValueError, TypeError):
+        return float(default)
+
+def get_tenor_list():
+    raw = get_pengaturan("tenor_options", "1,2,3,6,12,18,24")
+    try:
+        return [int(x.strip()) for x in raw.split(",") if x.strip()]
+    except Exception:
+        return [1, 2, 3, 6, 12, 18, 24]
+
+def set_pengaturan(kunci, nilai, keterangan=None):
+    c.execute("INSERT OR REPLACE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)", (kunci, str(nilai), keterangan or ""))
+    conn.commit()
+    st.session_state.pop(f"_setting_{kunci}", None)
+
+def log_aksi(username, aksi, detail=""):
+    try:
+        c.execute("INSERT INTO log_aktivitas (username, aksi, detail, waktu) VALUES (?,?,?,?)", (username, aksi, detail, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
+def metric_card(label, value, warna="card-blue"):
+    return f'<div class="metric-card {warna}"><div class="label">{label}</div><div class="value">{value}</div></div>'
+
+def flash(msg, typ="success"):
+    st.session_state.flash = (msg, typ)
+
+def show_flash():
+    if st.session_state.get("flash"):
+        msg, typ = st.session_state.flash
+        getattr(st, typ)(msg)
+        st.session_state.flash = None
+    if st.session_state.get("balloons"):
+        st.balloons(); st.session_state.balloons = False
+    if st.session_state.get("snow"):
+        st.snow(); st.session_state.snow = False
+
+def get_current_time():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def hitung_harga_cash(harga_modal, markup_persen, harga_jual):
+    if harga_jual and float(harga_jual) > 0:
+        return float(harga_jual)
+    mk = markup_persen if markup_persen is not None else get_pengaturan_float("markup_default_persen", 5.0)
+    return round(float(harga_modal) * (1 + float(mk) / 100), -2)
+
+def recalculate_kredit(kredit_id):
+    row = c.execute("SELECT total_hutang FROM kredit WHERE id=?", (kredit_id,)).fetchone()
+    if not row: return
+    total_hutang = row[0]
+    res = c.execute("SELECT COALESCE(SUM(jumlah_bayar - denda), 0) FROM pembayaran WHERE kredit_id=?", (kredit_id,)).fetchone()
+    total_principal_paid = res[0]
+    new_sisa = max(total_hutang - total_principal_paid, 0)
+    new_sisa = round(new_sisa, -2)
+    new_status = "Lunas" if new_sisa <= 0 else "Berjalan"
+    c.execute("UPDATE kredit SET sisa_hutang=?, status=? WHERE id=?", (new_sisa, new_status, kredit_id))
+    conn.commit()
+
+def hitung_denda(cicilan_bulan, hari_telat):
+    persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
+    if hari_telat <= 0:
+        return 0.0
+    return round(cicilan_bulan * (persen / 100) * hari_telat, -2)
+
+def build_jadwal_angsuran(total_hutang, cicilan_bulan, tenor, tanggal_kredit_str):
+    try:
+        tgl = datetime.strptime(tanggal_kredit_str, "%Y-%m-%d")
+    except Exception:
+        tgl = datetime.now()
+    schedule = []
+    sisa = float(total_hutang)
+    for i in range(1, int(tenor) + 1):
+        tgl = tgl + timedelta(days=30)
+        if i == int(tenor) or sisa <= float(cicilan_bulan):
+            bayar = sisa
+        else:
+            bayar = float(cicilan_bulan)
+        sisa = max(sisa - bayar, 0)
+        schedule.append({"ke": i, "jatuh_tempo": tgl.strftime("%d-%m-%Y"), "angsuran": bayar, "sisa": sisa})
+    return schedule
+
+def get_schedule_for_invoice(kredit_id, opsi, total, cicilan, tenor, tgl_str):
+    df_custom = pd.read_sql_query("SELECT ke, jatuh_tempo, angsuran, sisa FROM jadwal_kustom WHERE kredit_id=? AND opsi=? ORDER BY ke", conn, params=(kredit_id, opsi))
+    if not df_custom.empty:
+        return df_custom
+    else:
+        return pd.DataFrame(build_jadwal_angsuran(total, cicilan, tenor, tgl_str))
+
+def save_uploaded_file(uploaded_file, prefix):
+    if uploaded_file is not None:
+        file_path = os.path.join(UPLOAD_DIR, f"{prefix}_{uuid.uuid4().hex[:8]}.jpg")
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        return file_path
+    return None
+
+def auto_backup_database():
+    """Fungsi untuk membackup database setiap 5 menit secara otomatis."""
+    now = datetime.now()
+    last_backup_time = st.session_state.get('last_backup_time', datetime.min)
+    if (now - last_backup_time).total_seconds() >= 300: # 300 detik = 5 menit
+        try:
+            timestamp = now.strftime('%Y%m%d_%H%M%S')
+            backup_name = os.path.join(BACKUP_DIR, f"autobackup_{timestamp}.db")
+            shutil.copy2(DB_PATH, backup_name)
+            
+            script_path = os.path.join(BASE_DIR, "toko.py")
+            if os.path.exists(script_path):
+                script_backup = os.path.join(BACKUP_DIR, f"script_autobackup_{timestamp}.py")
+                shutil.copy2(script_path, script_backup)
+                
+            st.session_state['last_backup_time'] = now
+            
+            backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('autobackup_')], reverse=True)
+            for old_b in backups[10:]:
+                try: os.remove(os.path.join(BACKUP_DIR, old_b))
+                except: pass
+        except Exception:
+            pass
+
+# Seed admin
+c.execute("SELECT COUNT(*) FROM users")
+if c.fetchone()[0] == 0:
+    c.execute("INSERT INTO users (username, password, nama_lengkap, role) VALUES (?,?,?,?)", ("admin", hash_password("admin123"), "Administrator", "admin"))
+    conn.commit()
+
+# ==================== SEED DATA ====================
+def tanam_data_brosur():
+    c.execute("SELECT COUNT(*) FROM produk")
+    if c.fetchone()[0] == 0:
+        data = [
+            ("iPhone 17 256GB", "Gadget", 19046700, 10), ("iPhone 17 512GB", "Gadget", 22141900, 10),
+            ("iPhone 17 PRO 256GB", "Gadget", 20951400, 10), ("iPhone 17 PRO 512GB", "Gadget", 25237100, 10),
+            ("iPhone 17 PRO 1TB", "Gadget", 29761000, 10), ("iPhone 17 PRO MAX 256GB", "Gadget", 22856200, 10),
+            ("iPhone 17 PRO MAX 512GB", "Gadget", 27141900, 10), ("iPhone 17 PRO MAX 1TB", "Gadget", 31427600, 10),
+            ("iPhone 17 PRO MAX 2TB", "Gadget", 40237100, 10), ("iPhone 17 AIR 256GB", "Gadget", 15951400, 10),
+            ("iPhone 17 AIR 512GB", "Gadget", 20237100, 10), ("iPhone 17 AIR 1TB", "Gadget", 23618100, 10),
+            ("iPhone 17e 256GB", "Gadget", 12380000, 10), ("iPhone 17e 512GB", "Gadget", 16475200, 10),
+            ("iPhone 16 128GB", "Gadget", 15951400, 10), ("iPhone 16 256GB", "Gadget", 16903800, 10),
+            ("iPhone 16 PLUS 128GB", "Gadget", 15141900, 10), ("iPhone 16 PLUS 256GB", "Gadget", 16380000, 10),
+            ("iPhone 15 128GB", "Gadget", 13332400, 10), ("Galaxy S26 Ultra 256GB", "Gadget", 23332400, 10),
+            ("Galaxy S26 Ultra 512GB", "Gadget", 26189500, 10), ("Galaxy S26 Ultra 1TB", "Gadget", 30475200, 10),
+            ("Galaxy S26+ 256GB", "Gadget", 18570500, 10), ("Galaxy S26+ 512GB", "Gadget", 21427600, 10),
+            ("Galaxy S26 256GB", "Gadget", 15713300, 10), ("Galaxy S25 Ultra 256GB", "Gadget", 18570500, 10),
+            ("Reno 16 Pro 256GB", "Gadget", 14284800, 10), ("Reno 16 256GB (8GB)", "Gadget", 11427600, 10),
+            ("Reno 16 256GB (12GB)", "Gadget", 12380000, 10), ("Reno 16 F 128GB", "Gadget", 7618100, 10),
+            ("Find X9 Ultra", "Gadget", 26665700, 10), ("OPPO A6 128GB", "Gadget", 3808600, 10),
+        ]
+        c.executemany("INSERT INTO produk (nama, kategori, harga_modal, stok) VALUES (?,?,?,?)", data)
+        conn.commit()
+
+def tanam_data_pakaian():
+    existing = {row[0] for row in c.execute("SELECT nama FROM produk").fetchall()}
+    data_pakaian = [
+        ("Tunik Lop Top", "Atasan", 80000, 1), ("Rok Lurus", "Bawahan", 75000, 1),
+        ("Atasan Orange", "Atasan", 70000, 1), ("Hem", "Atasan", 50000, 1),
+        ("Mini Dress", "Dress", 50000, 2), ("Casual Dress", "Dress", 40000, 1),
+        ("Atasan Polkadot", "Atasan", 70000, 1), ("Outer", "Outerwear", 70000, 2),
+        ("Spanya Dress", "Dress", 50000, 3), ("Mini Dress Navy", "Dress", 75000, 1),
+        ("Celana Merah", "Bawahan", 35000, 1), ("Batik Premium (Keterangan 2)", "Batik", 60000, 1),
+        ("Batik Reguler (Keterangan 2)", "Batik", 50000, 10), ("Dress Premium (Keterangan 3)", "Dress", 50000, 30),
+        ("Dress Ibu Merah", "Dress", 60000, 1), ("Dress Baru (Keterangan 3)", "Dress", 30000, 1),
+        ("Jeans Wool", "Bawahan", 80000, 1), ("Midi Dress Hitam Merah", "Dress", 30000, 1),
+        ("Atasan Ibu Merah", "Atasan", 50000, 1), ("Atasan Basic (Keterangan 3)", "Atasan", 20000, 5),
+        ("Long Dress / Gamis (Keterangan 4)", "Dress", 50000, 20),
+        ("Dress Putih Lengan Panjang", "Dress", 0, 5), ("Hoodie Orange Female Monster", "Atasan", 0, 5),
+        ("Dress Stripe Hitam Putih", "Dress", 0, 5), ("Jumpeuit Apron Hitam", "Pakaian", 0, 5),
+        ("Kemeja Two-Way Jolene Olive", "Atasan", 0, 5), ("Dress Double-Breasted Olive", "Dress", 0, 5),
+        ("Dress Lace Pink Mutiara", "Dress", 0, 5), ("Blouse Ruffle Cream", "Atasan", 0, 5),
+        ("Atasan Puff Sleeve Floral Mint", "Atasan", 0, 5), ("Dress Textured Khaki Sabuk", "Dress", 0, 5),
+        ("Tunik Textured Abu-abu", "Atasan", 0, 5), ("Sweater Rajut Chunky Cream", "Atasan", 0, 5),
+        ("Blouse Lace Turtleneck Putih", "Atasan", 0, 5), ("Trench Coat Khaki Pink Lining", "Outerwear", 0, 5),
+        ("Dress Textured Abu Tanpa Lengan", "Dress", 0, 5), ("Dress Textured Beige Kancing", "Dress", 0, 5),
+        ("Dress Pinafore Aurora Taupe", "Dress", 0, 5)
+    ]
+    for nama, kat, modal, stok in data_pakaian:
+        if nama not in existing:
+            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) VALUES (?,?,?,?,0,NULL)", (nama, kat, modal, stok))
+    conn.commit()
+
+tanam_data_brosur()
+tanam_data_pakaian()
+
+# ==================== LOGIN ====================
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.nama = ""
+    st.session_state.role = ""
+
+if not st.session_state.logged_in:
+    st.markdown('<div class="main-header"><h1>🏪 GRACE\'S STORE</h1><p>Sistem Manajemen Toko & Cicilan</p></div>', unsafe_allow_html=True)
+    _, col2, _ = st.columns([1, 1, 1])
+    with col2:
+        with st.form("login"):
+            st.subheader("🔐 Login")
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Masuk")
+            if submit:
+                row = c.execute("SELECT username, password, nama_lengkap, role, aktif FROM users WHERE username=?", (u,)).fetchone()
+                if row and row[1] == hash_password(p) and row[4] == 1:
+                    st.session_state.logged_in = True
+                    st.session_state.username = row[0]
+                    st.session_state.nama = row[2]
+                    st.session_state.role = row[3]
+                    log_aksi(u, "LOGIN", "Berhasil login")
+                    st.rerun()
+                else:
+                    st.error("❌ Username / password salah atau akun nonaktif")
+        st.info("🔑 Default admin: **admin** / **admin123**")
+    st.stop()
+
+# ==================== SIDEBAR ====================
+with st.sidebar:
+    st.markdown(f"""
+    <div style="text-align:center; padding: 15px 0;">
+        <div style="font-size:3em;">👤</div>
+        <h3 style="margin:5px 0;">{st.session_state.nama}</h3>
+        <p style="opacity:0.8; margin:0; font-size:0.9em;">Role: {st.session_state.role.upper()}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("---")
+
+    menu_list = [
+        "🏠 Dashboard", 
+        "🧮 Input Produk & Skema", 
+        "📥 Barang Masuk", 
+        "🛒 Jual Cash", 
+        "📤 Kredit Baru",
+        "💰 Pembayaran Cicilan", 
+        "🖨️ Cetak Slip Kredit",
+        "👥 Data Customer", 
+        "🤝 Serah Terima Barang",
+        "📦 Stok Barang",
+        "🚨 Overdue & Denda", 
+        "🔔 Alert & Reminder", 
+        "📊 Laporan & Analitik",
+        "👕 Modal vs Profit", 
+        "💾 Backup, Cetak & Impor",
+    ]
+    if st.session_state.role == "admin":
+        menu_list.extend(["⚙️ Pengaturan Owner", "👤 Manajemen User", "📝 Log Aktivitas"])
+
+    pilihan = st.radio("📋 Menu", menu_list)
+    st.markdown("---")
+    if st.button("🚪 Logout"):
+        log_aksi(st.session_state.username, "LOGOUT")
+        for k in ["logged_in", "username", "nama", "role"]:
+            st.session_state[k] = False if k == "logged_in" else ""
+        st.session_state.pop("flash", None)
+        st.session_state.pop("balloons", None)
+        st.session_state.pop("snow", None)
+        for k in list(st.session_state.keys()):
+            if k.startswith("_setting_"):
+                st.session_state.pop(k, None)
+        st.rerun()
+
+show_flash()
+auto_backup_database()
 # ==================== 0. PENGATURAN OWNER ====================
 if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase default toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
@@ -777,9 +1204,7 @@ elif pilihan == "📥 Barang Masuk":
                     except Exception as e:
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
-
-
-# ==================== 4. JUAL CASH ====================
+                        # ==================== 4. JUAL CASH ====================
 elif pilihan == "🛒 Jual Cash":
     st.markdown('<div class="main-header"><h1>🛒 Kasir - Penjualan Tunai (Cash)</h1><p>Masukkan Harga Jual manual, sistem otomatis hitung profit.</p></div>', unsafe_allow_html=True)
     
@@ -1114,10 +1539,7 @@ elif pilihan == "📤 Kredit Baru":
                     st.error(f"❌ Gagal menghapus: {e}")
         else:
             st.info("Belum ada data kredit.")
-
-
-
-# ==================== 6. PEMBAYARAN CICILAN ====================
+            # ==================== 6. PEMBAYARAN CICILAN ====================
 elif pilihan == "💰 Pembayaran Cicilan":
     st.markdown('<div class="main-header"><h1>💰 Pembayaran Cicilan</h1></div>', unsafe_allow_html=True)
     df_kredit = pd.read_sql_query("""
@@ -1399,9 +1821,7 @@ elif pilihan == "🤝 Serah Terima Barang":
                     st.image(foto_bukti_val, caption="Bukti Serah Terima", width=400)
     else:
         st.info("Belum ada riwayat serah terima.")
-
-
-# ==================== 9. STOK BARANG ====================
+        # ==================== 9. STOK BARANG ====================
 elif pilihan == "📦 Stok Barang":
     st.markdown('<div class="main-header"><h1>📦 Real-time Stok Gudang</h1></div>', unsafe_allow_html=True)
 
@@ -1453,7 +1873,7 @@ elif pilihan == "📦 Stok Barang":
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
 
-# ==================== 10. CETAK SLIP KREDIT (FULL HTML) ====================
+# ==================== 10. CETAK SLIP KREDIT (FULL HTML DENGAN PERBAIKAN) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional sesuai standar OJK</p></div>', unsafe_allow_html=True)
 
@@ -1541,19 +1961,18 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             rows_1 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for r in sched_1])
             rows_2 = "".join([f"<tr><td class='c'>{r['ke']}</td><td>{r['jatuh_tempo']}</td><td class='r'>{format_rp(r['angsuran'])}</td><td class='r'>{format_rp(r['sisa'])}</td><td class='c'><span class='{'status-lunas' if r['ke'] <= paid_count else 'status-pending'}'>{'LUNAS' if r['ke'] <= paid_count else 'BELUM'}</span></td></tr>" for r in sched_2])
             
+            # PERBAIKAN: Bunga total disembunyikan
             html_tenor_options = f"""
             <div class="tenor-options">
                 <div class="tenor-card recommended">
                     <div class="tc-label">Opsi A (Dipilih)</div>
                     <div class="tc-title">Tenor {tenor_opsi_1}× ({tenor_opsi_1} Bulan)</div>
-                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100)*tenor_opsi_1:.0f}%)</span><span class="v">{format_rp(total_1 - pokok_awal)}</span></div>
                     <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_1)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_1)}</span></div>
                 </div>
                 <div class="tenor-card">
                     <div class="tc-label">Opsi B</div>
                     <div class="tc-title">Tenor {tenor_opsi_2}× ({tenor_opsi_2} Bulan)</div>
-                    <div class="tc-row"><span class="k">Bunga total ({(rate_bulan*100)*tenor_opsi_2:.0f}%)</span><span class="v">{format_rp(total_2 - pokok_awal)}</span></div>
                     <div class="tc-row"><span class="k">Total hutang</span><span class="v">{format_rp(total_2)}</span></div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(cicilan_2)}</span></div>
                 </div>
@@ -1703,26 +2122,28 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 </div>
             </header>
 
+            <!-- PERBAIKAN: Bunga Flat disembunyikan -->
             <div class="meta">
                 <div>Status: <b style="color:var(--success);">● {m_status.upper()}</b></div>
                 <div>Metode: <b>{m_metode}</b></div>
-                <div>Bunga Flat: <b>{m_bunga_bln}% / Bulan</b></div>
             </div>
 
             <div class="body">
                 <div class="grid-2">
+                    <!-- PERBAIKAN: NIK ditambahkan -->
                     <div class="card">
                         <div class="card-title">👤 Penerima / Customer</div>
                         <div class="kv-row"><div class="k">Nama</div><div class="v">{d['cn']}</div></div>
+                        <div class="kv-row"><div class="k">NIK</div><div class="v">{nik_cust}</div></div>
                         <div class="kv-row"><div class="k">Telepon</div><div class="v">{d['telepon']}</div></div>
                         <div class="kv-row"><div class="k">Alamat</div><div class="v" style="font-weight:400; font-size:10.5px;">{d['alamat']}</div></div>
                     </div>
+                    <!-- PERBAIKAN: Harga disembunyikan -->
                     <div class="card">
                         <div class="card-title">📱 Detail Produk</div>
                         <div class="kv-row"><div class="k">Deskripsi</div><div class="v">{d['pn']}</div></div>
                         <div class="kv-row"><div class="k">SKU</div><div class="v">GRC-{d['produk_id']}</div></div>
                         <div class="kv-row"><div class="k">Garansi</div><div class="v">3 Bulan</div></div>
-                        <div class="kv-row"><div class="k">Harga</div><div class="v">{format_rp(m_harga_cash)}</div></div>
                     </div>
                 </div>
 
@@ -1740,10 +2161,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 {html_tenor_options}
                 {html_schedule}
                 
-                <div class="note-text">
-                    *Catatan: DP {format_rp(m_dp)} telah diterima. Pokok {format_rp(m_pokok)} diangsur sesuai tenor yang dipilih. Terdapat Biaya Administrasi/Materai sebesar <b>Rp 10.000</b> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir. Total yang disetor pada bulan ke-{tenor_asli} adalah {format_rp(cicilan_terakhir)}.
-                </div>
-
+                <!-- PERBAIKAN: Blok note-text dihilangkan -->
+                
                 <div class="bank-box">
                     <div class="title">Pembayaran Transfer Resmi</div>
                     <div class="acc">Bank Mandiri: 148-00-2889246-4</div>
@@ -2003,9 +2422,7 @@ elif pilihan == "🚨 Overdue & Denda":
                 st.write(f"**Cicilan:** {format_rp(r['cicilan_bulan'])}")
                 st.write(f"**Denda ({denda_persen}%/hari):** {format_rp(denda)}")
                 st.error("Segera hubungi customer untuk penagihan!")
-
-
-# ==================== 12. ALERT & REMINDER ====================
+                # ==================== 12. ALERT & REMINDER ====================
 elif pilihan == "🔔 Alert & Reminder":
     st.markdown('<div class="main-header"><h1>🔔 Alert & Reminder</h1><p>Pusat notifikasi tagihan dan pengingat</p></div>', unsafe_allow_html=True)
     
@@ -2278,3 +2695,4 @@ elif pilihan == "📝 Log Aktivitas" and st.session_state.role == "admin":
         
     if st.button("🔄 Refresh Log"):
         st.rerun()
+        
