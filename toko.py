@@ -1391,6 +1391,7 @@ elif pilihan == "🛒 Jual Cash":
                         # ==================== 4. JUAL CASH ====================
 
 # ==================== 5. KREDIT BARU (DENGAN FITUR EDIT/DELETE/CANCEL) ====================
+# ==================== 5. KREDIT BARU ====================
 elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Transaksi Kredit Baru</h1></div>', unsafe_allow_html=True)
 
@@ -1429,7 +1430,7 @@ elif pilihan == "📤 Kredit Baru":
             else:
                 st.caption(f"⚙️ Markup: **{mk_p:.0f}%** — Harga Cash: {format_rp(h_cash)}")
 
-    st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
             
             col_dp, col_tenor, col_bunga = st.columns(3)
             with col_dp:
@@ -1458,14 +1459,15 @@ elif pilihan == "📤 Kredit Baru":
             html += metric_card("Margin (%)", f"{margin_transaksi:.1f}%", "card-orange")
             html += metric_card("Cicilan / Bulan", format_rp(cicilan), "card-pink")
             html += '</div>'
-    st.markdown(html, unsafe_allow_html=True)
+            
+            st.markdown(html, unsafe_allow_html=True)
             st.caption(f"⚙️ Bunga transaksi ini: **{bunga_flat:.1f}% / 6 bulan** → tenor {tenor} bln = {bunga_total*100:.1f}%")
 
             cek = c.execute("SELECT COUNT(*) FROM kredit WHERE customer_id=? AND status='Berjalan'", (opsi_cust[pilih_c],)).fetchone()[0]
             if cek > 0:
                 st.warning(f"⚠️ Customer ini punya {cek} kredit aktif. Pastikan tidak menumpuk!")
 
-            if st.button("✅ Proses Kredit & Keluarkan Barang"):
+            if st.button("✅ Proses Kredit & Keluarkan Barang", use_container_width=True):
                 id_c = opsi_cust[pilih_c]
                 tgl_kredit = datetime.now().strftime("%Y-%m-%d")
                 tgl_tempo = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -1526,13 +1528,9 @@ elif pilihan == "📤 Kredit Baru":
             if st.button("🗑️ Hapus Kredit & Kembalikan Stok", type="primary"):
                 try:
                     produk_id = d['produk_id']
-                    # Kembalikan stok
                     c.execute("UPDATE produk SET stok = stok + 1 WHERE id = ?", (produk_id,))
-                    # Hapus riwayat pembayaran terkait
                     c.execute("DELETE FROM pembayaran WHERE kredit_id = ?", (kid,))
-                    # Hapus serah terima terkait
                     c.execute("DELETE FROM serah_terima WHERE kredit_id = ?", (kid,))
-                    # Hapus kredit
                     c.execute("DELETE FROM kredit WHERE id = ?", (kid,))
                     conn.commit()
                     flash("🗑️ Kredit berhasil dihapus dan stok telah dikembalikan!", "success")
