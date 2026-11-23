@@ -410,7 +410,7 @@ with st.sidebar:
     if st.session_state.role == "admin":
         menu_list.extend(["⚙️ Pengaturan Owner", "👤 Manajemen User", "📝 Log Aktivitas"])
 
-    pilihan = st.radio("📋 Menu", menu_list)
+pilihan = st.radio("📋 Menu", menu_list, key="menu_utama")
     st.markdown("---")
     if st.button("🚪 Logout"):
         log_aksi(st.session_state.username, "LOGOUT")
