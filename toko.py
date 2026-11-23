@@ -1134,6 +1134,7 @@ elif pilihan == "🧮 Input Produk & Skema":
     st.markdown(html, unsafe_allow_html=True)
 
 # ==================== 3. BARANG MASUK ====================
+# ==================== 3. BARANG MASUK ====================
 elif pilihan == "📥 Barang Masuk":
     st.markdown('<div class="main-header"><h1>📥 Input Barang Masuk (Restock)</h1></div>', unsafe_allow_html=True)
     df_produk = pd.read_sql_query("SELECT id, nama, stok FROM produk ORDER BY nama", conn)
@@ -1162,49 +1163,50 @@ elif pilihan == "📥 Barang Masuk":
     st.markdown('<div class="section-header"><h3>📜 Riwayat Barang Masuk Terakhir</h3></div>', unsafe_allow_html=True)
     df_in = pd.read_sql_query("SELECT t.id, t.produk_id, p.nama as produk, t.jumlah, t.tanggal FROM transaksi_in t JOIN produk p ON t.produk_id = p.id ORDER BY t.id DESC LIMIT 20", conn)
     st.dataframe(df_in.drop(columns=['id', 'produk_id']), use_container_width=True, hide_index=True)
+    
+    if not df_in.empty:
+        st.markdown("**✏️ Edit / Hapus Barang Masuk**")
+        opsi_in = {f"ID #{r['id']} - {r['produk']} - {r['jumlah']} unit ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah'], r['tanggal']) for _, r in df_in.iterrows()}
+        pilih_in = st.selectbox("Pilih Riwayat Barang Masuk", list(opsi_in.keys()), key="sel_edit_in")
+        id_in, pid_in, qty_in, tgl_in = opsi_in[pilih_in]
         
-        if not df_in.empty:
-    st.markdown("**✏️ Edit / Hapus Barang Masuk**")
-            opsi_in = {f"ID #{r['id']} - {r['produk']} - {r['jumlah']} unit ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah'], r['tanggal']) for _, r in df_in.iterrows()}
-            pilih_in = st.selectbox("Pilih Riwayat Barang Masuk", list(opsi_in.keys()), key="sel_edit_in")
-            id_in, pid_in, qty_in, tgl_in = opsi_in[pilih_in]
-            
-            with st.form("form_edit_in"):
-                col_ed1, col_ed2 = st.columns(2)
-                with col_ed1:
-                    new_qty = st.number_input("Jumlah Masuk Baru", min_value=1, value=int(qty_in), step=1)
-                with col_ed2:
-                    new_tgl_in = st.date_input("Tanggal Masuk Baru", value=pd.to_datetime(tgl_in).date())
+        with st.form("form_edit_in"):
+            col_ed1, col_ed2 = st.columns(2)
+            with col_ed1:
+                new_qty = st.number_input("Jumlah Masuk Baru", min_value=1, value=int(qty_in), step=1)
+            with col_ed2:
+                new_tgl_in = st.date_input("Tanggal Masuk Baru", value=pd.to_datetime(tgl_in).date())
+                
+            colA, colB = st.columns(2)
+            with colA:
+                sub_edit_in = st.form_submit_button("💾 Update Data")
+            with colB:
+                sub_hapus_in = st.form_submit_button("🗑️ Hapus Riwayat")
+                
+            if sub_edit_in:
+                try:
+                    selisih = new_qty - qty_in
+                    c.execute("UPDATE transaksi_in SET jumlah=?, tanggal=? WHERE id=?", (new_qty, new_tgl_in.strftime("%Y-%m-%d"), id_in))
+                    c.execute("UPDATE produk SET stok = stok + ? WHERE id=?", (selisih, pid_in))
+                    conn.commit()
+                    flash("✅ Barang masuk diupdate & stok disesuaikan!", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal: {e}")
                     
-                colA, colB = st.columns(2)
-                with colA:
-                    sub_edit_in = st.form_submit_button("💾 Update Data")
-                with colB:
-                    sub_hapus_in = st.form_submit_button("🗑️ Hapus Riwayat")
-                    
-                if sub_edit_in:
-                    try:
-                        selisih = new_qty - qty_in
-                        c.execute("UPDATE transaksi_in SET jumlah=?, tanggal=? WHERE id=?", (new_qty, new_tgl_in.strftime("%Y-%m-%d"), id_in))
-                        c.execute("UPDATE produk SET stok = stok + ? WHERE id=?", (selisih, pid_in))
-                        conn.commit()
-                        flash("✅ Barang masuk diupdate & stok disesuaikan!", "success")
-                        st.rerun()
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"❌ Gagal: {e}")
-                        
-                if sub_hapus_in:
-                    try:
-                        c.execute("DELETE FROM transaksi_in WHERE id=?", (id_in,))
-                        c.execute("UPDATE produk SET stok = stok - ? WHERE id=?", (qty_in, pid_in))
-                        conn.commit()
-                        flash("🗑️ Riwayat barang masuk dihapus & stok dikurangi!", "success")
-                        st.rerun()
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"❌ Gagal: {e}")
-                        # ==================== 4. JUAL CASH ====================
+            if sub_hapus_in:
+                try:
+                    c.execute("DELETE FROM transaksi_in WHERE id=?", (id_in,))
+                    c.execute("UPDATE produk SET stok = stok - ? WHERE id=?", (qty_in, pid_in))
+                    conn.commit()
+                    flash("🗑️ Riwayat barang masuk dihapus & stok dikurangi!", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal: {e}")
+
+# ==================== 4. JUAL CASH ====================
 elif pilihan == "🛒 Jual Cash":
     st.markdown('<div class="main-header"><h1>🛒 Kasir - Penjualan Tunai (Cash)</h1><p>Masukkan Harga Jual manual, sistem otomatis hitung profit.</p></div>', unsafe_allow_html=True)
     
@@ -1216,7 +1218,7 @@ elif pilihan == "🛒 Jual Cash":
         col1, col2 = st.columns([1.2, 1])
         
         with col1:
-    st.markdown('<div class="section-header"><h3>💵 Input Transaksi</h3></div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header"><h3>💵 Input Transaksi</h3></div>', unsafe_allow_html=True)
             
             opsi_prod = {f"{r['nama']} | Modal: {format_rp(r['harga_modal'])} | Sisa: {r['stok']}": (r['id'], r['nama'], r['kategori'], r['harga_modal'], r['markup_persen'], r['harga_jual'], r['stok']) for _, r in df_prod.iterrows()}
             pilih_p = st.selectbox("📱 Pilih Produk", list(opsi_prod.keys()))
@@ -1243,7 +1245,7 @@ elif pilihan == "🛒 Jual Cash":
                 profit_satuan = harga_jual_input - mod_p
                 total_profit = profit_satuan * jumlah_beli
                 
-    st.markdown(f"### Total Belanja: **{format_rp(total_belanja)}**")
+                st.markdown(f"### Total Belanja: **{format_rp(total_belanja)}**")
                 
                 if profit_satuan < 0:
                     st.error(f"⚠️ **RUGI!** Anda menjual di bawah modal. (Rugi: {format_rp(abs(total_profit))})")
@@ -1279,7 +1281,7 @@ elif pilihan == "🛒 Jual Cash":
                             st.error(f"❌ Gagal: {e}")
 
         with col2:
-    st.markdown('<div class="section-header"><h3>🧾 Struk Transaksi Terakhir</h3></div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-header"><h3>🧾 Struk Transaksi Terakhir</h3></div>', unsafe_allow_html=True)
             df_riw = pd.read_sql_query("""
                 SELECT t.id, t.tanggal, p.nama as produk, t.jumlah, t.harga_jual_satuan, t.total_harga, t.uang_bayar, t.kembalian, t.laba 
                 FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id 
@@ -1288,7 +1290,7 @@ elif pilihan == "🛒 Jual Cash":
             
             if not df_riw.empty:
                 r = df_riw.iloc[0]
-    st.markdown(f"""
+                st.markdown(f"""
                 <div style="border: 1px dashed #ccc; padding: 20px; border-radius: 10px; background-color: white; color: #333;">
                     <h3 style="text-align: center; margin-bottom: 0; color:#667eea;">GRACE STORE</h3>
                     <p style="text-align: center; font-size: 12px; color: #666;">{r['tanggal']}</p>
@@ -1312,80 +1314,81 @@ elif pilihan == "🛒 Jual Cash":
                 st.info("Belum ada transaksi tunai pada sesi ini.")
                 
     st.markdown('<div class="section-header"><h3>📜 Riwayat Jual Cash (5 Terakhir)</h3></div>', unsafe_allow_html=True)
-            df_riw_all = pd.read_sql_query("""
-                SELECT t.id, t.produk_id, t.tanggal, p.nama as produk, t.jumlah, t.harga_jual_satuan, t.uang_bayar, t.total_harga, t.laba 
-                FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id 
-                ORDER BY t.id DESC LIMIT 5
-            """, conn)
-            
-            if not df_riw_all.empty:
-                df_show = df_riw_all.drop(columns=['id', 'produk_id', 'harga_jual_satuan', 'uang_bayar']).copy()
-                df_show['total_harga'] = df_show['total_harga'].apply(format_rp)
-                df_show['laba'] = df_show['laba'].apply(format_rp)
-                df_show = df_show.rename(columns={'tanggal':'Tanggal', 'produk':'Produk', 'jumlah':'Qty', 'total_harga':'Total Jual', 'laba':'Profit'})
-                st.dataframe(df_show, use_container_width=True, hide_index=True)
-                
- st.markdown("**🗑️ Hapus Transaksi & Kembalikan Stok**")
-                opsi_hapus = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah']) for _, r in df_riw_all.iterrows()}
-                pilih_hapus = st.selectbox("Pilih transaksi yang ingin dihapus:", list(opsi_hapus.keys()))
-                
-                if st.button("Hapus Transaksi Terpilih", type="primary"):
-                    id_transaksi, produk_id, qty = opsi_hapus[pilih_hapus]
-                    try:
-                        c.execute("UPDATE produk SET stok = stok + ? WHERE id = ?", (qty, produk_id))
-                        c.execute("DELETE FROM transaksi_cash WHERE id = ?", (id_transaksi,))
-                        conn.commit()
-                        log_aksi(st.session_state.username, "HAPUS_CASH", f"ID {id_transaksi}, Kembalikan Stok {qty}")
-                        flash("🗑️ Transaksi berhasil dihapus dan stok telah dikembalikan!", "success")
-                        st.rerun()
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"❌ Gagal: {e}")
+    df_riw_all = pd.read_sql_query("""
+        SELECT t.id, t.produk_id, t.tanggal, p.nama as produk, t.jumlah, t.harga_jual_satuan, t.uang_bayar, t.total_harga, t.laba 
+        FROM transaksi_cash t JOIN produk p ON t.produk_id = p.id 
+        ORDER BY t.id DESC LIMIT 5
+    """, conn)
+    
+    if not df_riw_all.empty:
+        df_show = df_riw_all.drop(columns=['id', 'produk_id', 'harga_jual_satuan', 'uang_bayar']).copy()
+        df_show['total_harga'] = df_show['total_harga'].apply(format_rp)
+        df_show['laba'] = df_show['laba'].apply(format_rp)
+        df_show = df_show.rename(columns={'tanggal':'Tanggal', 'produk':'Produk', 'jumlah':'Qty', 'total_harga':'Total Jual', 'laba':'Profit'})
+        st.dataframe(df_show, use_container_width=True, hide_index=True)
+        
+        st.markdown("**🗑️ Hapus Transaksi & Kembalikan Stok**")
+        opsi_hapus = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": (r['id'], r['produk_id'], r['jumlah']) for _, r in df_riw_all.iterrows()}
+        pilih_hapus = st.selectbox("Pilih transaksi yang ingin dihapus:", list(opsi_hapus.keys()))
+        
+        if st.button("Hapus Transaksi Terpilih", type="primary"):
+            id_transaksi, produk_id, qty = opsi_hapus[pilih_hapus]
+            try:
+                c.execute("UPDATE produk SET stok = stok + ? WHERE id = ?", (qty, produk_id))
+                c.execute("DELETE FROM transaksi_cash WHERE id = ?", (id_transaksi,))
+                conn.commit()
+                log_aksi(st.session_state.username, "HAPUS_CASH", f"ID {id_transaksi}, Kembalikan Stok {qty}")
+                flash("🗑️ Transaksi berhasil dihapus dan stok telah dikembalikan!", "success")
+                st.rerun()
+            except Exception as e:
+                conn.rollback()
+                st.error(f"❌ Gagal: {e}")
 
-    st.markdown("**✏️ Edit Harga / Jumlah / Nominal Transaksi**")
-                opsi_edit_cash = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": r['id'] for _, r in df_riw_all.iterrows()}
-                pilih_edit_cash = st.selectbox("Pilih transaksi untuk diedit:", list(opsi_edit_cash.keys()), key="sel_edit_cash")
-                id_edit_cash = opsi_edit_cash[pilih_edit_cash]
-                detail_cash = df_riw_all[df_riw_all['id'] == id_edit_cash].iloc[0]
-                
-                modal_asli = c.execute("SELECT harga_modal FROM produk WHERE id=?", (detail_cash['produk_id'],)).fetchone()[0]
-                
-                with st.form("form_edit_cash"):
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        new_hj = st.number_input("Harga Jual Satuan Baru (Rp)", value=float(detail_cash['harga_jual_satuan']), step=1000.0)
-                    with col2:
-                        new_qty_cash = st.number_input("Jumlah Beli Baru", min_value=1, value=int(detail_cash['jumlah']), step=1)
-                    with col3:
-                        new_uang = st.number_input("Uang Diterima Baru (Rp)", value=float(detail_cash['uang_bayar']), step=10000.0)
+        st.markdown("**✏️ Edit Harga / Jumlah / Nominal Transaksi**")
+        opsi_edit_cash = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": r['id'] for _, r in df_riw_all.iterrows()}
+        pilih_edit_cash = st.selectbox("Pilih transaksi untuk diedit:", list(opsi_edit_cash.keys()), key="sel_edit_cash")
+        id_edit_cash = opsi_edit_cash[pilih_edit_cash]
+        detail_cash = df_riw_all[df_riw_all['id'] == id_edit_cash].iloc[0]
+        
+        modal_asli = c.execute("SELECT harga_modal FROM produk WHERE id=?", (detail_cash['produk_id'],)).fetchone()[0]
+        
+        with st.form("form_edit_cash"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                new_hj = st.number_input("Harga Jual Satuan Baru (Rp)", value=float(detail_cash['harga_jual_satuan']), step=1000.0)
+            with col2:
+                new_qty_cash = st.number_input("Jumlah Beli Baru", min_value=1, value=int(detail_cash['jumlah']), step=1)
+            with col3:
+                new_uang = st.number_input("Uang Diterima Baru (Rp)", value=float(detail_cash['uang_bayar']), step=10000.0)
+            
+            if st.form_submit_button("💾 Simpan Perubahan"):
+                try:
+                    selisih_qty = new_qty_cash - detail_cash['jumlah']
+                    stok_tersedia = c.execute("SELECT stok FROM produk WHERE id=?", (detail_cash['produk_id'],)).fetchone()[0]
                     
-                    if st.form_submit_button("💾 Simpan Perubahan"):
-                        try:
-                            selisih_qty = new_qty_cash - detail_cash['jumlah']
-                            stok_tersedia = c.execute("SELECT stok FROM produk WHERE id=?", (detail_cash['produk_id'],)).fetchone()[0]
-                            
-                            if selisih_qty > 0 and stok_tersedia < selisih_qty:
-                                st.error(f"❌ Stok tidak mencukupi untuk menambah {selisih_qty} unit! Sisa stok: {stok_tersedia}")
-                            else:
-                                new_total = new_hj * new_qty_cash
-                                new_profit = (new_hj - modal_asli) * new_qty_cash
-                                new_kembalian = new_uang - new_total
-                                
-                                if new_uang < new_total:
-                                    st.error("❌ Uang diterima kurang dari total belanja baru!")
-                                else:
-                                    c.execute("UPDATE produk SET stok = stok - ? WHERE id = ?", (selisih_qty, detail_cash['produk_id']))
-                                    c.execute("""UPDATE transaksi_cash SET harga_jual_satuan=?, jumlah=?, total_harga=?, uang_bayar=?, kembalian=?, laba=? WHERE id=?""",
-                                              (new_hj, new_qty_cash, new_total, new_uang, new_kembalian, new_profit, id_edit_cash))
-                                    conn.commit()
-                                    log_aksi(st.session_state.username, "EDIT_CASH", f"ID {id_edit_cash}")
-                                    flash("✅ Transaksi berhasil diupdate, stok & profit disesuaikan!", "success")
-                                    st.rerun()
-                        except Exception as e:
-                            conn.rollback()
-                            st.error(f"❌ Gagal: {e}")
-            else:
-                st.write("Belum ada data.")
+                    if selisih_qty > 0 and stok_tersedia < selisih_qty:
+                        st.error(f"❌ Stok tidak mencukupi untuk menambah {selisih_qty} unit! Sisa stok: {stok_tersedia}")
+                    else:
+                        new_total = new_hj * new_qty_cash
+                        new_profit = (new_hj - modal_asli) * new_qty_cash
+                        new_kembalian = new_uang - new_total
+                        
+                        if new_uang < new_total:
+                            st.error("❌ Uang diterima kurang dari total belanja baru!")
+                        else:
+                            c.execute("UPDATE produk SET stok = stok - ? WHERE id = ?", (selisih_qty, detail_cash['produk_id']))
+                            c.execute("""UPDATE transaksi_cash SET harga_jual_satuan=?, jumlah=?, total_harga=?, uang_bayar=?, kembalian=?, laba=? WHERE id=?""",
+                                      (new_hj, new_qty_cash, new_total, new_uang, new_kembalian, new_profit, id_edit_cash))
+                            conn.commit()
+                            log_aksi(st.session_state.username, "EDIT_CASH", f"ID {id_edit_cash}")
+                            flash("✅ Transaksi berhasil diupdate, stok & profit disesuaikan!", "success")
+                            st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal: {e}")
+    else:
+        st.write("Belum ada data.")
+                        # ==================== 4. JUAL CASH ====================
 
 # ==================== 5. KREDIT BARU (DENGAN FITUR EDIT/DELETE/CANCEL) ====================
 elif pilihan == "📤 Kredit Baru":
