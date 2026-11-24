@@ -1250,7 +1250,7 @@ elif pilihan == "👥 Data Customer":
                 nik = st.text_input("NIK")
             with col2:
                 a = st.text_area("Alamat")
-                tgl_lhr = st.date_input("Tanggal Lahir")
+                tgl_lhr = st.date_input("Tanggal Lahir", min_value=datetime(1940, 1, 1).date())
                 st_kawin = st.selectbox("Status Kawin", ["Belum Kawin", "Kawin", "Cerai Hidup", "Cerai Mati"])
             
             st.markdown("**Upload Berkas Identitas (KTP & KK)**")
