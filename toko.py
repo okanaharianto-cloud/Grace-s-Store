@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 from PIL import Image
 from PIL import Image
 
-# ===== LIBRARY UNTUK IMPORT DOKUMEN =====
+# ===== LIBRARY UNTUK  DOKUMEN =====
 try:
     import pdfplumber
     PDF_AVAILABLE = True
@@ -33,7 +33,17 @@ except ImportError:
     DOCX_AVAILABLE = False
 
 import re
+# Di bagian atas file, setelah import
+try:
+    import pytesseract
+    from PIL import Image as PILImage
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
 
+# Tambahkan baris ini untuk mengatur path di Streamlit Cloud
+if OCR_AVAILABLE:
+    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 # ==================== KONFIGURASI HALAMAN ====================
 # ==================== KONFIGURASI HALAMAN ====================
 st.set_page_config(
