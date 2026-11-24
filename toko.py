@@ -1721,7 +1721,7 @@ elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
             with col6:
                 imp_bunga = st.number_input("Bunga / Bulan (%)", value=float(extracted.get("bunga", 0)), step=0.1, format="%.2f", key="imp_bunga")
             with col7:
-                imp_jatuh_tempo = st.date_input("Jatuh Tempo Pertama", value=(datetime.now() + timedelta(days=30)).date(), key="imp_jt")
+                imp_jatuh_tempo = st.date_input("Jatuh Tempo Pertama", value=(datetime.now() + timedelta(days=30)).date(), min_value=datetime(2000, 1, 1).date(), key="imp_jt")
 
             st.markdown('<div class="section-header"><h3>📎 Lampiran Foto (opsional)</h3></div>', unsafe_allow_html=True)
             col_f1, col_f2 = st.columns(2)
