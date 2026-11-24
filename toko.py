@@ -1,3 +1,9 @@
+# ============================================================
+# GRACE'S STORE - SISTEM MANAJEMEN TOKO & CICILAN
+# Versi Patch: Backup Aman WAL + PBKDF2 + Enkripsi Upload + UU PDP
+# ============================================================
+
+# ==================== IMPORT ====================
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -6,13 +12,21 @@ import os
 import shutil
 import uuid
 import io
+import zipfile
+import secrets
+import re
 from datetime import datetime, timedelta
 import altair as alt
 import streamlit.components.v1 as components
 from PIL import Image
-from PIL import Image
 
-# ===== LIBRARY UNTUK  DOKUMEN =====
+try:
+    from cryptography.fernet import Fernet
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
+# ===== LIBRARY DOKUMEN =====
 try:
     import pdfplumber
     PDF_AVAILABLE = True
@@ -32,19 +46,9 @@ try:
 except ImportError:
     DOCX_AVAILABLE = False
 
-import re
-# Di bagian atas file, setelah import
-try:
-    import pytesseract
-    from PIL import Image as PILImage
-    OCR_AVAILABLE = True
-except ImportError:
-    OCR_AVAILABLE = False
-
-# Tambahkan baris ini untuk mengatur path di Streamlit Cloud
 if OCR_AVAILABLE:
     pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
-# ==================== KONFIGURASI HALAMAN ====================
+
 # ==================== KONFIGURASI HALAMAN ====================
 st.set_page_config(
     page_title="GRACE'S STORE (CASH & CREDIT)",
@@ -91,27 +95,52 @@ st.markdown("""
 PAKAIAN_KATEGORI = ["Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik"]
 SEMUA_KATEGORI = ["Gadget", "Elektronik", "Pakaian", "Atasan", "Bawahan", "Dress", "Outerwear", "Batik", "Furnitur", "Motor", "Lainnya"]
 ALAMAT_TOKO = "Jl. Barong Tongkok, Kutai Barat"
-UPLOAD_DIR = "uploads"
-
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
 
 def is_pakaian(kat):
     return kat in PAKAIAN_KATEGORI
 
-# ==================== KONEKSI DATABASE ====================
+# ==================== PATH PERSISTEN ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "toko_kredit.db")
-BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 
-if not os.path.exists(BACKUP_DIR):
-    os.makedirs(BACKUP_DIR)
-    
+# Set env PERSIST_DIR di hosting (misal /data) agar tahan reset.
+PERSIST_DIR = os.getenv("PERSIST_DIR", BASE_DIR)
+os.makedirs(PERSIST_DIR, exist_ok=True)
+
+DB_PATH    = os.path.join(PERSIST_DIR, "toko_kredit.db")
+BACKUP_DIR = os.path.join(PERSIST_DIR, "backups")
+UPLOAD_DIR = os.path.join(PERSIST_DIR, "uploads")
+os.makedirs(BACKUP_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# ==================== ENKRIPSI FILE UPLOAD ====================
+FERNET_KEY = os.getenv("FERNET_KEY", "")
+if CRYPTO_AVAILABLE and FERNET_KEY:
+    try:
+        _fernet = Fernet(FERNET_KEY.encode())
+    except Exception:
+        _fernet = None
+else:
+    _fernet = None  # fallback: plaintext (khusus dev)
+
+# ==================== FUNGSI BACKUP AMAN ====================
+def backup_db_aman(dest_path: str):
+    """Backup konsisten via API sqlite3 (aman untuk mode WAL)."""
+    tmp = dest_path + ".tmp"
+    with sqlite3.connect(DB_PATH) as src, sqlite3.connect(tmp) as dst:
+        src.backup(dst)
+    with sqlite3.connect(tmp) as chk:
+        ok = chk.execute("PRAGMA integrity_check").fetchone()[0]
+    if ok != "ok":
+        try: os.remove(tmp)
+        except: pass
+        raise RuntimeError(f"Backup korup: {ok}")
+    os.replace(tmp, dest_path)
+
 # Backup harian
 backup_file = os.path.join(BACKUP_DIR, f"backup_{datetime.now().strftime('%Y%m%d')}.db")
 if os.path.exists(DB_PATH) and not os.path.exists(backup_file):
     try:
-        shutil.copy2(DB_PATH, backup_file)
+        backup_db_aman(backup_file)
     except Exception:
         pass
 
@@ -137,6 +166,16 @@ c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AU
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
 c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
+
+# Tabel consent UU PDP
+c.execute('''CREATE TABLE IF NOT EXISTS consent (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER,
+    jenis TEXT,
+    disetujui INTEGER,
+    waktu TEXT,
+    keterangan TEXT
+)''')
 conn.commit()
 
 # ==================== MIGRASI KOLOM ====================
@@ -178,8 +217,26 @@ for k, (v, ket) in DEFAULT_PENGATURAN.items():
 conn.commit()
 
 # ==================== HELPER FUNCTIONS ====================
-def hash_password(p):
-    return hashlib.sha256(p.encode()).hexdigest()
+def hash_password(p, salt: str = None):
+    """PBKDF2-HMAC-SHA256 dengan salt. Format: pbkdf2$iter$salt$hash"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    iterations = 200_000
+    dk = hashlib.pbkdf2_hmac("sha256", p.encode(), salt.encode(), iterations)
+    return f"pbkdf2${iterations}${salt}${dk.hex()}"
+
+def verify_password(p, stored: str) -> bool:
+    """Verifikasi PBKDF2 (baru) maupun SHA-256 (legacy)."""
+    if not stored:
+        return False
+    if stored.startswith("pbkdf2$"):
+        try:
+            _, it, salt, _h = stored.split("$")
+            dk = hashlib.pbkdf2_hmac("sha256", p.encode(), salt.encode(), int(it))
+            return secrets.compare_digest(dk.hex(), _h)
+        except Exception:
+            return False
+    return hashlib.sha256(p.encode()).hexdigest() == stored
 
 def format_rp(n):
     try:
@@ -210,13 +267,15 @@ def get_tenor_list():
         return [1, 2, 3, 6, 12, 18, 24]
 
 def set_pengaturan(kunci, nilai, keterangan=None):
-    c.execute("INSERT OR REPLACE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)", (kunci, str(nilai), keterangan or ""))
+    c.execute("INSERT OR REPLACE INTO pengaturan (kunci, nilai, keterangan) VALUES (?,?,?)",
+              (kunci, str(nilai), keterangan or ""))
     conn.commit()
     st.session_state.pop(f"_setting_{kunci}", None)
 
 def log_aksi(username, aksi, detail=""):
     try:
-        c.execute("INSERT INTO log_aktivitas (username, aksi, detail, waktu) VALUES (?,?,?,?)", (username, aksi, detail, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        c.execute("INSERT INTO log_aktivitas (username, aksi, detail, waktu) VALUES (?,?,?,?)",
+                  (username, aksi, detail, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -282,51 +341,82 @@ def build_jadwal_angsuran(total_hutang, cicilan_bulan, tenor, tanggal_kredit_str
     return schedule
 
 def get_schedule_for_invoice(kredit_id, opsi, total, cicilan, tenor, tgl_str):
-    df_custom = pd.read_sql_query("SELECT ke, jatuh_tempo, angsuran, sisa FROM jadwal_kustom WHERE kredit_id=? AND opsi=? ORDER BY ke", conn, params=(kredit_id, opsi))
+    df_custom = pd.read_sql_query(
+        "SELECT ke, jatuh_tempo, angsuran, sisa FROM jadwal_kustom WHERE kredit_id=? AND opsi=? ORDER BY ke",
+        conn, params=(kredit_id, opsi)
+    )
     if not df_custom.empty:
         return df_custom
     else:
         return pd.DataFrame(build_jadwal_angsuran(total, cicilan, tenor, tgl_str))
 
 def save_uploaded_file(uploaded_file, prefix):
-    if uploaded_file is not None:
-        file_path = os.path.join(UPLOAD_DIR, f"{prefix}_{uuid.uuid4().hex[:8]}.jpg")
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        return file_path
-    return None
+    """Simpan file; isi dienkripsi bila FERNET_KEY tersedia."""
+    if uploaded_file is None:
+        return None
+    file_path = os.path.join(UPLOAD_DIR, f"{prefix}_{uuid.uuid4().hex[:8]}.jpg")
+    data = bytes(uploaded_file.getbuffer())
+    if _fernet:
+        data = _fernet.encrypt(data)
+    with open(file_path, "wb") as f:
+        f.write(data)
+    return file_path
 
-def auto_backup_database():
-    """Fungsi untuk membackup database setiap 5 menit secara otomatis."""
-    now = datetime.now()
-    last_backup_time = st.session_state.get('last_backup_time', datetime.min)
-    if (now - last_backup_time).total_seconds() >= 300: # 300 detik = 5 menit
+def baca_file_terenkripsi(path):
+    """Return bytes siap ditampilkan; auto-dekripsi bila perlu."""
+    if not path or str(path) in ("None", "") or not os.path.exists(str(path)):
+        return None
+    with open(path, "rb") as f:
+        raw = f.read()
+    if _fernet:
         try:
-            timestamp = now.strftime('%Y%m%d_%H%M%S')
-            backup_name = os.path.join(BACKUP_DIR, f"autobackup_{timestamp}.db")
-            shutil.copy2(DB_PATH, backup_name)
-            
+            return _fernet.decrypt(raw)
+        except Exception:
+            return raw  # file lama plaintext
+    return raw
+    # ==================== AUTO-BACKUP 5 MENIT ====================
+def auto_backup_database():
+    """Backup tiap 5 menit (DB aman WAL + zip script & uploads), rotasi 10 terakhir."""
+    now = datetime.now()
+    last = st.session_state.get('last_backup_time', datetime.min)
+    if (now - last).total_seconds() < 300:
+        return
+    try:
+        ts = now.strftime('%Y%m%d_%H%M%S')
+        backup_db_aman(os.path.join(BACKUP_DIR, f"autobackup_{ts}.db"))
+
+        zip_path = os.path.join(BACKUP_DIR, f"bundle_{ts}.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
             script_path = os.path.join(BASE_DIR, "toko.py")
             if os.path.exists(script_path):
-                script_backup = os.path.join(BACKUP_DIR, f"script_autobackup_{timestamp}.py")
-                shutil.copy2(script_path, script_backup)
-                
-            st.session_state['last_backup_time'] = now
-            
-            backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.startswith('autobackup_')], reverse=True)
-            for old_b in backups[10:]:
-                try: os.remove(os.path.join(BACKUP_DIR, old_b))
-                except: pass
-        except Exception:
-            pass
+                z.write(script_path, "toko.py")
+            for root, _, files in os.walk(UPLOAD_DIR):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    try:
+                        z.write(fp, os.path.relpath(fp, BASE_DIR))
+                    except Exception:
+                        pass
 
-# Seed admin
+        for prefix in ("autobackup_", "bundle_"):
+            files = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith(prefix))
+            for old in files[:-10]:
+                try: os.remove(os.path.join(BACKUP_DIR, old))
+                except: pass
+
+        st.session_state['last_backup_time'] = now
+    except Exception as e:
+        try: log_aksi("SYSTEM", "BACKUP_GAGAL", str(e))
+        except: pass
+
+# ==================== SEED ADMIN ====================
 c.execute("SELECT COUNT(*) FROM users")
 if c.fetchone()[0] == 0:
-    c.execute("INSERT INTO users (username, password, nama_lengkap, role) VALUES (?,?,?,?)", ("admin", hash_password("admin123"), "Administrator", "admin"))
+    c.execute("INSERT INTO users (username, password, nama_lengkap, role) VALUES (?,?,?,?)",
+              ("admin", hash_password("admin123"), "Administrator", "admin"))
     conn.commit()
 
-# ==================== SEED DATA ====================
+# ==================== SEED DATA PRODUK ====================
 def tanam_data_brosur():
     c.execute("SELECT COUNT(*) FROM produk")
     if c.fetchone()[0] == 0:
@@ -377,7 +467,8 @@ def tanam_data_pakaian():
     ]
     for nama, kat, modal, stok in data_pakaian:
         if nama not in existing:
-            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) VALUES (?,?,?,?,0,NULL)", (nama, kat, modal, stok))
+            c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok, markup_persen, harga_jual) VALUES (?,?,?,?,0,NULL)",
+                      (nama, kat, modal, stok))
     conn.commit()
 
 tanam_data_brosur()
@@ -401,7 +492,11 @@ if not st.session_state.logged_in:
             submit = st.form_submit_button("Masuk")
             if submit:
                 row = c.execute("SELECT username, password, nama_lengkap, role, aktif FROM users WHERE username=?", (u,)).fetchone()
-                if row and row[1] == hash_password(p) and row[4] == 1:
+                if row and verify_password(p, row[1]) and row[4] == 1:
+                    # migrasi otomatis hash lama → PBKDF2
+                    if not row[1].startswith("pbkdf2$"):
+                        c.execute("UPDATE users SET password=? WHERE username=?", (hash_password(p), u))
+                        conn.commit()
                     st.session_state.logged_in = True
                     st.session_state.username = row[0]
                     st.session_state.nama = row[2]
@@ -461,7 +556,6 @@ with st.sidebar:
 
 show_flash()
 auto_backup_database()
-
 # ==================== 0. PENGATURAN OWNER ====================
 if pilihan == "⚙️ Pengaturan Owner" and st.session_state.role == "admin":
     st.markdown('<div class="main-header"><h1>⚙️ Pengaturan Owner</h1><p>Atur persentase default toko sesuai keinginan Anda</p></div>', unsafe_allow_html=True)
@@ -668,8 +762,7 @@ elif pilihan == "🏠 Dashboard":
         st.dataframe(df_dekat, use_container_width=True, hide_index=True)
     else:
         st.success("✅ Tidak ada jatuh tempo dalam 7 hari ke depan")
-
-# ==================== 2. INPUT PRODUK & SKEMA ====================
+        # ==================== 2. INPUT PRODUK & SKEMA ====================
 elif pilihan == "🧮 Input Produk & Skema":
     st.markdown('<div class="main-header"><h1>🧮 Input Produk & Kalkulator Kredit</h1></div>', unsafe_allow_html=True)
 
@@ -812,7 +905,6 @@ elif pilihan == "📥 Barang Masuk":
                     except Exception as e:
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
-
 
 # ==================== 4. JUAL CASH ====================
 elif pilihan == "🛒 Jual Cash":
@@ -1004,8 +1096,7 @@ elif pilihan == "🛒 Jual Cash":
                             st.error(f"❌ Gagal: {e}")
             else:
                 st.write("Belum ada data.")
-
-# ==================== 5. KREDIT BARU (DENGAN FITUR EDIT/DELETE/CANCEL) ====================
+                # ==================== 5. KREDIT BARU ====================
 elif pilihan == "📤 Kredit Baru":
     st.markdown('<div class="main-header"><h1>📤 Transaksi Kredit Baru</h1></div>', unsafe_allow_html=True)
 
@@ -1048,7 +1139,6 @@ elif pilihan == "📤 Kredit Baru":
             
             col_dp, col_tenor, col_bunga = st.columns(3)
             with col_dp:
-                # Mengubah min_value menjadi 0.0 agar bisa diketik manual berapapun
                 dp_persen = st.number_input("DP (%)", min_value=0.0, max_value=100.0, value=float(dp_min_persen_default), step=1.0, help=f"Minimal DP dari Owner adalah {dp_min_persen_default}%")
                 if dp_persen < dp_min_persen_default:
                     st.warning(f"⚠️ DP di bawah batas minimal Owner ({dp_min_persen_default}%). Pastikan sudah disetujui!")
@@ -1160,8 +1250,6 @@ elif pilihan == "📤 Kredit Baru":
         else:
             st.info("Belum ada data kredit.")
 
-
-
 # ==================== 6. PEMBAYARAN CICILAN ====================
 elif pilihan == "💰 Pembayaran Cicilan":
     st.markdown('<div class="main-header"><h1>💰 Pembayaran Cicilan</h1></div>', unsafe_allow_html=True)
@@ -1237,8 +1325,7 @@ elif pilihan == "💰 Pembayaran Cicilan":
             st.dataframe(df_riw, use_container_width=True, hide_index=True)
         else:
             st.info("Belum ada pembayaran untuk akun ini")
-
-# ==================== 7. DATA CUSTOMER (DENGAN FITUR KTP/KK) ====================
+            # ==================== 7. DATA CUSTOMER ====================
 elif pilihan == "👥 Data Customer":
     st.markdown('<div class="main-header"><h1>👥 Data Pelanggan & Berkas</h1></div>', unsafe_allow_html=True)
     tab1, tab2, tab3 = st.tabs(["➕ Tambah Customer", "📋 Daftar & Berkas", "✏️ Edit / Hapus Customer"])
@@ -1262,13 +1349,29 @@ elif pilihan == "👥 Data Customer":
             with col_kk:
                 upload_kk = st.file_uploader("Upload Foto KK", type=["jpg", "jpeg", "png"])
 
+            consent = st.checkbox(
+                "✅ Customer menyetujui data pribadi (KTP/KK) disimpan & diproses "
+                "sesuai UU PDP No. 27/2022."
+            )
+
             if st.form_submit_button("💾 Simpan Customer"):
-                if n:
+                if not n:
+                    st.warning("Nama wajib diisi")
+                elif not consent:
+                    st.error("❌ Persetujuan (consent) wajib dicentang sebelum menyimpan data pribadi.")
+                else:
                     path_ktp = save_uploaded_file(upload_ktp, "KTP")
-                    path_kk = save_uploaded_file(upload_kk, "KK")
+                    path_kk  = save_uploaded_file(upload_kk, "KK")
                     try:
-                        c.execute("INSERT INTO customer (nama, telepon, alamat, nik, tanggal_lahir, status_kawin, foto_ktp, foto_kk) VALUES (?,?,?,?,?,?,?,?)", 
+                        c.execute("""INSERT INTO customer
+                                     (nama, telepon, alamat, nik, tanggal_lahir, status_kawin, foto_ktp, foto_kk)
+                                     VALUES (?,?,?,?,?,?,?,?)""",
                                   (n, t, a, nik, tgl_lhr.strftime("%d-%m-%Y"), st_kawin, path_ktp, path_kk))
+                        customer_id_baru = c.lastrowid
+                        c.execute("""INSERT INTO consent (customer_id, jenis, disetujui, waktu, keterangan)
+                                     VALUES (?,?,?,?,?)""",
+                                  (customer_id_baru, "data_pribadi", 1,
+                                   get_current_time(), "Disetujui saat pendaftaran"))
                         conn.commit()
                         log_aksi(st.session_state.username, "TAMBAH_CUSTOMER", n)
                         flash(f"✅ Customer {n} disimpan!", "success")
@@ -1276,8 +1379,6 @@ elif pilihan == "👥 Data Customer":
                     except Exception as e:
                         conn.rollback()
                         st.error(f"❌ Gagal menyimpan customer: {e}")
-                else:
-                    st.warning("Nama wajib diisi")
 
     with tab2:
         df_c = pd.read_sql_query("""
@@ -1301,14 +1402,18 @@ elif pilihan == "👥 Data Customer":
                 col_img1, col_img2 = st.columns(2)
                 with col_img1:
                     foto_ktp_val = detail_c['foto_ktp']
-                    if foto_ktp_val is not None and str(foto_ktp_val) not in ["None", ""] and os.path.exists(str(foto_ktp_val)):
-                        st.image(foto_ktp_val, caption="Foto KTP", use_column_width=True)
+                    img_ktp = baca_file_terenkripsi(foto_ktp_val)
+                    if img_ktp:
+                        st.image(img_ktp, caption="Foto KTP", use_column_width=True)
+                        log_aksi(st.session_state.username, "LIHAT_KTP", f"Customer ID {cid}")
                     else:
                         st.info("Belum ada foto KTP.")
                 with col_img2:
                     foto_kk_val = detail_c['foto_kk']
-                    if foto_kk_val is not None and str(foto_kk_val) not in ["None", ""] and os.path.exists(str(foto_kk_val)):
-                        st.image(foto_kk_val, caption="Foto KK", use_column_width=True)
+                    img_kk = baca_file_terenkripsi(foto_kk_val)
+                    if img_kk:
+                        st.image(img_kk, caption="Foto KK", use_column_width=True)
+                        log_aksi(st.session_state.username, "LIHAT_KK", f"Customer ID {cid}")
                     else:
                         st.info("Belum ada foto KK.")
 
@@ -1378,7 +1483,29 @@ elif pilihan == "👥 Data Customer":
                             conn.rollback()
                             st.error(f"❌ Gagal: {e}")
 
-# ==================== 8. SERAH TERIMA BARANG (IMEI & BUKTI) ====================
+            # Tombol Hak Penghapusan Data Pribadi (UU PDP)
+            st.markdown("---")
+            st.markdown("**🧹 Hak Penghapusan Data Pribadi (UU PDP)**")
+            st.caption("Menghapus NIK, tanggal lahir, foto KTP, dan foto KK. Riwayat transaksi tetap tersimpan.")
+            if st.button("🧹 Hapus Data Pribadi Customer Ini", key=f"hapus_pribadi_{cid_edit}"):
+                try:
+                    c.execute("""UPDATE customer
+                                 SET nik=NULL, tanggal_lahir=NULL,
+                                     foto_ktp=NULL, foto_kk=NULL
+                                 WHERE id=?""", (cid_edit,))
+                    c.execute("""INSERT INTO consent (customer_id, jenis, disetujui, waktu, keterangan)
+                                 VALUES (?,?,?,?,?)""",
+                              (cid_edit, "penghapusan", 1,
+                               get_current_time(), "Permintaan customer"))
+                    conn.commit()
+                    log_aksi(st.session_state.username, "HAPUS_DATA_PRIBADI", f"Customer {cid_edit}")
+                    flash("✅ Data pribadi customer telah dihapus (UU PDP).", "success")
+                    st.rerun()
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"❌ Gagal: {e}")
+
+# ==================== 8. SERAH TERIMA BARANG ====================
 elif pilihan == "🤝 Serah Terima Barang":
     st.markdown('<div class="main-header"><h1>🤝 Berita Acara Serah Terima</h1><p>Mencegah pelanggan kabur & bukti sah</p></div>', unsafe_allow_html=True)
     
@@ -1440,13 +1567,12 @@ elif pilihan == "🤝 Serah Terima Barang":
             with st.expander(f"📅 {r['tanggal_serah']} - {r['customer']} (IMEI: {r['imei']})"):
                 st.write(f"**Penerima:** {r['penerima']}")
                 foto_bukti_val = r['foto_bukti']
-                if foto_bukti_val is not None and str(foto_bukti_val) not in ["None", ""] and os.path.exists(str(foto_bukti_val)):
-                    st.image(foto_bukti_val, caption="Bukti Serah Terima", width=400)
+                img_bukti = baca_file_terenkripsi(foto_bukti_val)
+                if img_bukti:
+                    st.image(img_bukti, caption="Bukti Serah Terima", width=400)
     else:
         st.info("Belum ada riwayat serah terima.")
-
-
-# ==================== 9. STOK BARANG ====================
+        # ==================== 9. STOK BARANG ====================
 elif pilihan == "📦 Stok Barang":
     st.markdown('<div class="main-header"><h1>📦 Real-time Stok Gudang</h1></div>', unsafe_allow_html=True)
 
@@ -1497,7 +1623,292 @@ elif pilihan == "📦 Stok Barang":
                     except Exception as e:
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
-# ==================== 5B. IMPORT DOKUMEN (PDF / WORD / FOTO) ====================
+
+# ==================== 11. OVERDUE & DENDA ====================
+elif pilihan == "🚨 Overdue & Denda":
+    st.markdown('<div class="main-header"><h1>🚨 Overdue & Denda</h1><p>Daftar kredit yang lewat jatuh tempo</p></div>', unsafe_allow_html=True)
+    
+    tgl_skrg = datetime.now().strftime("%Y-%m-%d")
+    df_od = pd.read_sql_query("""
+        SELECT k.id, c.nama as customer, c.telepon, p.nama as produk,
+               k.cicilan_bulan, k.jatuh_tempo, k.sisa_hutang
+        FROM kredit k
+        JOIN customer c ON k.customer_id = c.id
+        JOIN produk p ON k.produk_id = p.id
+        WHERE k.status='Berjalan' AND k.jatuh_tempo < ?
+        ORDER BY k.jatuh_tempo ASC
+    """, conn, params=(tgl_skrg,))
+    
+    if df_od.empty:
+        st.success("✅ Tidak ada kredit yang overdue.")
+    else:
+        denda_persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
+        rows = []
+        total_denda = 0
+        for _, r in df_od.iterrows():
+            tgl_tempo = datetime.strptime(r['jatuh_tempo'], "%Y-%m-%d").date()
+            hari_telat = (datetime.now().date() - tgl_tempo).days
+            denda = hitung_denda(r['cicilan_bulan'], hari_telat)
+            total_denda += denda
+            rows.append({
+                "ID": r['id'], "Customer": r['customer'], "Telepon": r['telepon'],
+                "Produk": r['produk'], "Jatuh Tempo": r['jatuh_tempo'],
+                "Hari Telat": hari_telat, "Cicilan": format_rp(r['cicilan_bulan']),
+                "Denda": format_rp(denda), "Sisa Hutang": format_rp(r['sisa_hutang'])
+            })
+        
+        html = '<div class="metric-grid">'
+        html += metric_card("🚨 Akun Overdue", f"{len(df_od)} akun", "card-pink")
+        html += metric_card("💰 Total Denda", format_rp(total_denda), "card-orange")
+        html += metric_card("📊 Denda/Hari", f"{denda_persen:.2f}%", "card-dark")
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+# ==================== 12. ALERT & REMINDER ====================
+elif pilihan == "🔔 Alert & Reminder":
+    st.markdown('<div class="main-header"><h1>🔔 Alert & Reminder</h1><p>Pengingat otomatis untuk customer</p></div>', unsafe_allow_html=True)
+    
+    tgl_skrg = datetime.now()
+    opsi_hari = st.selectbox("Tampilkan jatuh tempo dalam:", [3, 7, 14, 30], index=1)
+    tgl_batas = (tgl_skrg + timedelta(days=opsi_hari)).strftime("%Y-%m-%d")
+    tgl_skrg_str = tgl_skrg.strftime("%Y-%m-%d")
+    
+    df_rem = pd.read_sql_query("""
+        SELECT k.id, c.nama as customer, c.telepon, p.nama as produk,
+               k.cicilan_bulan, k.jatuh_tempo, k.sisa_hutang
+        FROM kredit k
+        JOIN customer c ON k.customer_id = c.id
+        JOIN produk p ON k.produk_id = p.id
+        WHERE k.status='Berjalan' AND k.jatuh_tempo BETWEEN ? AND ?
+        ORDER BY k.jatuh_tempo ASC
+    """, conn, params=(tgl_skrg_str, tgl_batas))
+    
+    if df_rem.empty:
+        st.success(f"✅ Tidak ada jatuh tempo dalam {opsi_hari} hari ke depan.")
+    else:
+        st.info(f"📅 Ada **{len(df_rem)} akun** yang akan jatuh tempo dalam {opsi_hari} hari ke depan.")
+        for _, r in df_rem.iterrows():
+            with st.expander(f"👤 {r['customer']} — {r['produk']} — JT {r['jatuh_tempo']}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Telepon:** {r['telepon']}")
+                    st.write(f"**Cicilan:** {format_rp(r['cicilan_bulan'])}")
+                with col2:
+                    st.write(f"**Sisa Hutang:** {format_rp(r['sisa_hutang'])}")
+                    wa_link = f"https://wa.me/{str(r['telepon']).replace('-','').replace(' ','')}?text=Halo%20{r['customer']},%20mengingatkan%20cicilan%20{r['produk']}%20jatuh%20tempo%20{r['jatuh_tempo']}.%20Terima%20kasih."
+                    st.markdown(f"[📱 Kirim WhatsApp]({wa_link})")
+
+# ==================== 13. LAPORAN & ANALITIK ====================
+elif pilihan == "📊 Laporan & Analitik":
+    st.markdown('<div class="main-header"><h1>📊 Laporan & Analitik</h1></div>', unsafe_allow_html=True)
+    
+    tab_lap1, tab_lap2, tab_lap3 = st.tabs(["📈 Ringkasan Penjualan", "💳 Status Kredit", "📥 Export Data"])
+    
+    with tab_lap1:
+        df_cash = pd.read_sql_query("SELECT substr(tanggal,1,7) as bulan, COUNT(*) as transaksi, SUM(total_harga) as total, SUM(laba) as laba FROM transaksi_cash GROUP BY bulan ORDER BY bulan", conn)
+        df_kredit = pd.read_sql_query("SELECT substr(tanggal_kredit,1,7) as bulan, COUNT(*) as transaksi, SUM(total_hutang) as total FROM kredit GROUP BY bulan ORDER BY bulan", conn)
+        
+        st.markdown("**🛒 Penjualan Cash per Bulan**")
+        if not df_cash.empty:
+            df_cash['total'] = df_cash['total'].apply(format_rp)
+            df_cash['laba'] = df_cash['laba'].apply(format_rp)
+            st.dataframe(df_cash, use_container_width=True, hide_index=True)
+        else:
+            st.info("Belum ada penjualan cash.")
+        
+        st.markdown("**💳 Kredit Baru per Bulan**")
+        if not df_kredit.empty:
+            df_kredit['total'] = df_kredit['total'].apply(format_rp)
+            st.dataframe(df_kredit, use_container_width=True, hide_index=True)
+        else:
+            st.info("Belum ada kredit baru.")
+    
+    with tab_lap2:
+        df_status = pd.read_sql_query("SELECT status, COUNT(*) as jumlah, SUM(total_hutang) as total, SUM(sisa_hutang) as sisa FROM kredit GROUP BY status", conn)
+        if not df_status.empty:
+            df_status['total'] = df_status['total'].apply(format_rp)
+            df_status['sisa'] = df_status['sisa'].apply(format_rp)
+            st.dataframe(df_status, use_container_width=True, hide_index=True)
+        
+        df_top_cust = pd.read_sql_query("""
+            SELECT c.nama, COUNT(k.id) as total_kredit, SUM(k.total_hutang) as total_nilai
+            FROM kredit k JOIN customer c ON k.customer_id = c.id
+            GROUP BY c.id ORDER BY total_nilai DESC LIMIT 10
+        """, conn)
+        st.markdown("**🏆 Top 10 Customer (berdasarkan total nilai kredit)**")
+        if not df_top_cust.empty:
+            df_top_cust['total_nilai'] = df_top_cust['total_nilai'].apply(format_rp)
+            st.dataframe(df_top_cust, use_container_width=True, hide_index=True)
+    
+    with tab_lap3:
+        st.markdown("**📥 Export Data ke CSV**")
+        pilihan_export = st.selectbox("Pilih data:", ["Produk", "Customer", "Kredit", "Pembayaran", "Transaksi Cash"])
+        
+        if pilihan_export == "Produk":
+            df_exp = pd.read_sql_query("SELECT * FROM produk", conn)
+        elif pilihan_export == "Customer":
+            df_exp = pd.read_sql_query("SELECT id, nama, telepon, alamat FROM customer", conn)
+        elif pilihan_export == "Kredit":
+            df_exp = pd.read_sql_query("SELECT * FROM kredit", conn)
+        elif pilihan_export == "Pembayaran":
+            df_exp = pd.read_sql_query("SELECT * FROM pembayaran", conn)
+        else:
+            df_exp = pd.read_sql_query("SELECT * FROM transaksi_cash", conn)
+        
+        csv = df_exp.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label=f"📥 Download {pilihan_export}.csv",
+            data=csv,
+            file_name=f"{pilihan_export.lower()}_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+
+# ==================== 14. MODAL VS PROFIT ====================
+elif pilihan == "👕 Modal vs Profit":
+    st.markdown('<div class="main-header"><h1>👕 Analisis Modal vs Profit</h1><p>Perbandingan khusus produk pakaian</p></div>', unsafe_allow_html=True)
+    
+    df_pk = pd.read_sql_query(f"""
+        SELECT p.id, p.nama, p.kategori, p.harga_modal, p.harga_jual,
+               ((SELECT COUNT(*) FROM kredit k WHERE k.produk_id = p.id) + 
+                (SELECT COALESCE(SUM(jumlah), 0) FROM transaksi_cash t WHERE t.produk_id = p.id)) as terjual
+        FROM produk p WHERE p.kategori IN ({','.join(['?']*len(PAKAIAN_KATEGORI))})
+        ORDER BY p.nama
+    """, conn, params=tuple(PAKAIAN_KATEGORI))
+    
+    if df_pk.empty:
+        st.info("Belum ada produk pakaian.")
+    else:
+        df_pk['profit_satuan'] = df_pk.apply(lambda r: (r['harga_jual'] or 0) - r['harga_modal'], axis=1)
+        df_pk['total_profit'] = df_pk['profit_satuan'] * df_pk['terjual']
+        df_pk['margin_persen'] = df_pk.apply(lambda r: (r['profit_satuan'] / r['harga_jual'] * 100) if r['harga_jual'] and r['harga_jual'] > 0 else 0, axis=1)
+        
+        total_modal = (df_pk['harga_modal'] * df_pk['terjual']).sum()
+        total_profit = df_pk['total_profit'].sum()
+        belum_harga = df_pk[df_pk['harga_jual'].isna() | (df_pk['harga_jual'] <= 0)]
+        
+        html = '<div class="metric-grid">'
+        html += metric_card("👕 Total Produk Pakaian", f"{len(df_pk)} jenis", "card-purple")
+        html += metric_card("💰 Total Modal Terjual", format_rp(total_modal), "card-dark")
+        html += metric_card("📈 Total Profit", format_rp(total_profit), "card-green")
+        html += metric_card("⚠️ Belum Harga", f"{len(belum_harga)} produk", "card-pink")
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)
+        
+        df_show = df_pk[['nama', 'kategori', 'harga_modal', 'harga_jual', 'profit_satuan', 'terjual', 'total_profit', 'margin_persen']].copy()
+        for col in ['harga_modal', 'harga_jual', 'profit_satuan', 'total_profit']:
+            df_show[col] = df_show[col].apply(format_rp)
+        df_show['margin_persen'] = df_show['margin_persen'].apply(lambda x: f"{x:.1f}%")
+        st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+# ==================== 15. BACKUP, CETAK & IMPOR ====================
+elif pilihan == "💾 Backup, Cetak & Impor":
+    st.markdown('<div class="main-header"><h1>💾 Backup, Cetak & Impor</h1></div>', unsafe_allow_html=True)
+    
+    tab_b1, tab_b2, tab_b3 = st.tabs(["💾 Backup Manual", "🖨️ Cetak Laporan", "📥 Import Data"])
+    
+    with tab_b1:
+        st.markdown("### 💾 Backup Database Manual")
+        st.info(f"📁 Lokasi database: `{DB_PATH}`\n\n📁 Folder backup: `{BACKUP_DIR}`")
+        
+        if st.button("💾 Buat Backup Sekarang"):
+            try:
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                dest = os.path.join(BACKUP_DIR, f"manual_{ts}.db")
+                backup_db_aman(dest)
+                log_aksi(st.session_state.username, "BACKUP_MANUAL", dest)
+                flash(f"✅ Backup berhasil: `{os.path.basename(dest)}`", "success")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Gagal backup: {e}")
+        
+        st.markdown("### 📥 Download Backup Database")
+        if os.path.exists(DB_PATH):
+            with open(DB_PATH, "rb") as f:
+                st.download_button(
+                    label="📥 Download Database (.db)",
+                    data=f.read(),
+                    file_name=f"toko_kredit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+                    mime="application/octet-stream"
+                )
+        
+        st.markdown("### 📋 Daftar Backup Terakhir")
+        backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith('.db') or f.endswith('.zip')], reverse=True)[:20]
+        if backups:
+            for b in backups:
+                fp = os.path.join(BACKUP_DIR, b)
+                size = os.path.getsize(fp) / 1024
+                st.write(f"• `{b}` — {size:.1f} KB")
+        else:
+            st.info("Belum ada backup.")
+    
+    with tab_b2:
+        st.markdown("### 🖨️ Cetak Laporan")
+        pilihan_cetak = st.selectbox("Pilih laporan:", ["Laporan Kredit Aktif", "Laporan Overdue", "Laporan Penjualan Cash", "Laporan Customer"])
+        
+        if st.button("🖨️ Tampilkan untuk Dicetak"):
+            st.markdown("---")
+            st.markdown(f"## {pilihan_cetak}")
+            st.markdown(f"Tanggal cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}")
+            st.markdown("---")
+            
+            if pilihan_cetak == "Laporan Kredit Aktif":
+                df_cetak = pd.read_sql_query("""
+                    SELECT k.id, c.nama, p.nama as produk, k.total_hutang, k.sisa_hutang, k.cicilan_bulan, k.jatuh_tempo, k.status
+                    FROM kredit k JOIN customer c ON k.customer_id=c.id JOIN produk p ON k.produk_id=p.id
+                    WHERE k.status='Berjalan' ORDER BY k.jatuh_tempo
+                """, conn)
+            elif pilihan_cetak == "Laporan Overdue":
+                df_cetak = pd.read_sql_query("""
+                    SELECT k.id, c.nama, p.nama as produk, k.jatuh_tempo, k.cicilan_bulan, k.sisa_hutang
+                    FROM kredit k JOIN customer c ON k.customer_id=c.id JOIN produk p ON k.produk_id=p.id
+                    WHERE k.status='Berjalan' AND k.jatuh_tempo < ? ORDER BY k.jatuh_tempo
+                """, conn, params=(datetime.now().strftime("%Y-%m-%d"),))
+            elif pilihan_cetak == "Laporan Penjualan Cash":
+                df_cetak = pd.read_sql_query("""
+                    SELECT t.id, t.tanggal, p.nama as produk, t.jumlah, t.total_harga, t.laba
+                    FROM transaksi_cash t JOIN produk p ON t.produk_id=p.id
+                    ORDER BY t.tanggal DESC
+                """, conn)
+            else:
+                df_cetak = pd.read_sql_query("SELECT id, nama, telepon, alamat FROM customer ORDER BY nama", conn)
+            
+            st.dataframe(df_cetak, use_container_width=True, hide_index=True)
+    
+    with tab_b3:
+        st.markdown("### 📥 Import Data dari CSV")
+        st.info("Format CSV harus sesuai dengan kolom tabel. Gunakan fitur Export di menu Laporan untuk template.")
+        
+        tipe_import = st.selectbox("Pilih tipe data:", ["Customer", "Produk"])
+        file_import = st.file_uploader("Upload file CSV", type=["csv"])
+        
+        if file_import is not None:
+            try:
+                df_imp = pd.read_csv(file_import)
+                st.markdown("**Preview data:**")
+                st.dataframe(df_imp.head(10), use_container_width=True)
+                
+                if st.button("📥 Proses Import"):
+                    berhasil = 0
+                    gagal = 0
+                    for _, row in df_imp.iterrows():
+                        try:
+                            if tipe_import == "Customer":
+                                c.execute("INSERT INTO customer (nama, telepon, alamat) VALUES (?,?,?)",
+                                          (row.get('nama'), row.get('telepon'), row.get('alamat')))
+                            else:
+                                c.execute("INSERT INTO produk (nama, kategori, harga_modal, stok) VALUES (?,?,?,?)",
+                                          (row.get('nama'), row.get('kategori'), row.get('harga_modal', 0), row.get('stok', 0)))
+                            berhasil += 1
+                        except Exception:
+                            gagal += 1
+                    conn.commit()
+                    log_aksi(st.session_state.username, "IMPORT_CSV", f"{tipe_import}: {berhasil} berhasil, {gagal} gagal")
+                    flash(f"✅ Import selesai! {berhasil} berhasil, {gagal} gagal.", "success")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"❌ Gagal membaca CSV: {e}")
+                # ==================== 5B. IMPORT DOKUMEN (PDF / WORD / FOTO) ====================
 elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
     st.markdown('<div class="main-header"><h1>📥 Import Dokumen Lama</h1><p>Migrasi data dari PDF / Word / Foto ke sistem</p></div>', unsafe_allow_html=True)
 
@@ -1851,15 +2262,7 @@ elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
                 st.dataframe(df_hist, use_container_width=True, hide_index=True)
             else:
                 st.info("Belum ada riwayat import oleh Anda.")
-# ==================== 10. CETAK SLIP KREDIT (FULL HTML) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
-# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
+                # ==================== 10. CETAK SLIP KREDIT (FULL HTML) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional - PDF 1 & PDF 2 satu template</p></div>', unsafe_allow_html=True)
 
@@ -1910,7 +2313,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             m_dp         = st.number_input("DP Dibayar (Rp)", value=float(d['dp']), step=10000.0)
             m_pokok      = st.number_input("Pokok Hutang (Rp)", value=float(d['pokok_hutang']), step=10000.0)
         with col_e2:
-            m_total_hutang = st.number_input("Total Hutang (Rp) (Disembunyikan)", value=float(d['total_hutang']), step=10000.0)
+            m_total_hutang = st.number_input("Total Hutang (Rp)", value=float(d['total_hutang']), step=10000.0)
             m_cicilan      = st.number_input("Cicilan / Bulan (Rp)", value=float(d['cicilan_bulan']), step=10000.0)
             m_tenor        = st.number_input("Tenor (Bulan)", value=int(d['tenor']), step=1, min_value=1)
         with col_e3:
@@ -1936,7 +2339,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     tanggal_kredit_str = d['tanggal_kredit'] if pd.notna(d['tanggal_kredit']) else (datetime.strptime(d['jatuh_tempo'], "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
 
     tenor_asli   = int(m_tenor)
-    rate_bulan   = m_bunga_bln / 100 if 'm_bunga_bln' in locals() else (get_pengaturan_float("bunga_flat_6bln_persen", 40.0) / 6 / 100)
     paid_count   = len(df_bayar)
     biaya_materai = 10000
     cicilan_terakhir = m_cicilan + biaya_materai
@@ -1977,135 +2379,108 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         for r in sched_1
     ])
 
-    # ====== CSS BERSAMA (OPTIMASI 1 HALAMAN A4) ======
+    # ====== CSS BERSAMA ======
     shared_css = """
     :root { --primary:#1e3a8a; --primary-light:#eff6ff; --accent:#d97706; --accent-light:#fffbeb; --success:#059669; --success-light:#ecfdf5; --danger:#dc2626; --danger-light:#fef2f2; --text-main:#1f2937; --text-muted:#6b7280; --border:#e5e7eb; }
     * { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    
-    /* Setup Kertas A4 */
-    @page { size: A4; margin: 10mm; }
-    body { font-family:'Inter','Segoe UI',Helvetica,Arial,sans-serif; background:#f3f4f6; padding:10px; color:var(--text-main); font-size:11px; line-height:1.3; }
-    
-    /* Container Halaman */
-    .page { max-width:210mm; min-height:297mm; margin:0 auto 20px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1); page-break-after: always; display:flex; flex-direction:column; position:relative; }
-    .page:last-child { page-break-after: auto; }
-    
-    .btn-print-wrap { position:sticky; top:0; z-index:9999; background:rgba(243,244,246,0.95); padding:10px 0; text-align:center; border-bottom:1px solid var(--border); margin-bottom:20px; }
-    .btn-print { background:linear-gradient(135deg,#2563eb,#1e40af); color:white; border:none; padding:10px 24px; font-size:13px; border-radius:50px; cursor:pointer; font-weight:600; width:100%; max-width:350px; box-shadow:0 4px 12px rgba(37,99,235,0.3); }
-    
-    /* Header */
-    .hdr { background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%); color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; }
+    body { font-family:'Inter','Segoe UI',Helvetica,Arial,sans-serif; background:#f3f4f6; padding:20px 10px; color:var(--text-main); font-size:12px; line-height:1.5; }
+    .page { max-width:820px; margin:0 auto 30px auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1); }
+    .btn-print-wrap { position:sticky; top:0; z-index:9999; background:rgba(243,244,246,0.95); padding:12px 0; text-align:center; border-bottom:1px solid var(--border); margin-bottom:20px; }
+    .btn-print { background:linear-gradient(135deg,#2563eb,#1e40af); color:white; border:none; padding:10px 24px; font-size:14px; border-radius:50px; cursor:pointer; font-weight:600; width:100%; max-width:350px; box-shadow:0 4px 12px rgba(37,99,235,0.3); }
+    .hdr { background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%); color:#fff; padding:20px 24px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; }
     .brand { position:relative; z-index:1; max-width:70%; }
-    .brand h1 { font-size:18px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px; }
-    .brand .tag { font-size:9px; color:#93c5fd; font-weight:500; letter-spacing:0.5px; margin-bottom:3px; }
-    .brand .addr { font-size:8.5px; color:#cbd5e1; line-height:1.3; }
-    .title-box { text-align:right; position:relative; z-index:1; margin-top:4px; }
-    .badge-inv { display:inline-block; background:rgba(217,119,6,0.2); color:#fcd34d; padding:2px 8px; border-radius:4px; font-size:8.5px; font-weight:700; letter-spacing:1px; text-transform:uppercase; border:1px solid rgba(217,119,6,0.4); margin-bottom:4px; }
-    .inv-no { font-size:12px; font-weight:700; font-family:monospace; letter-spacing:1px; }
-    .inv-date { font-size:9px; color:#94a3b8; margin-top:1px; }
-    
-    /* Body Content */
-    .meta { display:flex; gap:10px; justify-content:space-between; padding:6px 16px; background:#f8fafc; border-bottom:1px solid var(--border); font-size:9.5px; color:var(--text-muted); flex-wrap:wrap; }
+    .brand h1 { font-size:22px; font-weight:800; letter-spacing:0.5px; margin-bottom:4px; }
+    .brand .tag { font-size:11px; color:#93c5fd; font-weight:500; letter-spacing:0.5px; margin-bottom:8px; }
+    .brand .addr { font-size:10px; color:#cbd5e1; line-height:1.5; }
+    .title-box { text-align:right; position:relative; z-index:1; margin-top:5px; }
+    .badge-inv { display:inline-block; background:rgba(217,119,6,0.2); color:#fcd34d; padding:4px 12px; border-radius:6px; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; border:1px solid rgba(217,119,6,0.4); margin-bottom:8px; }
+    .inv-no { font-size:15px; font-weight:700; font-family:monospace; letter-spacing:1px; }
+    .inv-date { font-size:11px; color:#94a3b8; margin-top:4px; }
+    .meta { display:flex; gap:20px; justify-content:space-between; padding:12px 24px; background:#f8fafc; border-bottom:1px solid var(--border); font-size:11px; color:var(--text-muted); flex-wrap:wrap; }
     .meta b { color:var(--text-main); }
-    .body { padding:12px 16px; flex:1; }
-    
-    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
-    .card { border:1px solid var(--border); border-radius:6px; padding:8px 10px; background:#fff; }
-    .card-title { font-size:9px; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
-    .kv-row { display:flex; margin-bottom:3px; font-size:10px; }
+    .body { padding:20px 24px; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+    .card { border:1px solid var(--border); border-radius:8px; padding:12px 16px; background:#fff; }
+    .card-title { font-size:10.5px; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+    .kv-row { display:flex; margin-bottom:6px; font-size:11px; }
     .kv-row:last-child { margin-bottom:0; }
-    .kv-row .k { width:50px; color:var(--text-muted); }
+    .kv-row .k { width:65px; color:var(--text-muted); }
     .kv-row .v { flex:1; font-weight:600; color:var(--text-main); }
-    
-    .summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
-    .sum-card { border-radius:6px; padding:8px 10px; border:1px solid; }
-    .sum-card .lbl { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:2px; }
-    .sum-card .val { font-size:14px; font-weight:800; }
+    .summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+    .sum-card { border-radius:8px; padding:12px 16px; border:1px solid; }
+    .sum-card .lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:4px; }
+    .sum-card .val { font-size:18px; font-weight:800; }
     .sum-card.green { background:var(--success-light); border-color:#a7f3d0; color:var(--success); }
     .sum-card.amber { background:var(--accent-light); border-color:#fde68a; color:var(--accent); }
-    
-    .tenor-options { display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:10px; }
-    .tenor-card { border:1.5px solid var(--border); border-radius:6px; padding:8px 10px; background:#fff; }
+    .tenor-options { display:grid; grid-template-columns:1fr; gap:12px; margin-bottom:16px; }
+    .tenor-card { border:1.5px solid var(--border); border-radius:8px; padding:12px 16px; background:#fff; }
     .tenor-card.recommended { border-color:var(--primary); background:var(--primary-light); }
-    .tc-label { font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:2px; }
-    .tc-title { font-size:11px; font-weight:700; margin-bottom:4px; color:var(--text-main); }
-    .tc-row { display:flex; justify-content:space-between; font-size:10px; padding:2px 0; }
-    .tc-row.main { border-top:1px dashed var(--border); margin-top:4px; padding-top:4px; font-weight:700; color:var(--primary); }
-    
-    /* Tabel Jadwal */
-    .sched-wrap { display:grid; gap:10px; margin-bottom:10px; }
-    .sched { border:1px solid var(--border); border-radius:6px; overflow:hidden; }
-    .sched-h { background:var(--primary); color:#fff; padding:5px 10px; font-size:9.5px; font-weight:700; letter-spacing:0.5px; }
-    table { width:100%; border-collapse:collapse; font-size:9px; }
-    th { background:#f8fafc; padding:3px 6px; text-align:left; font-weight:700; color:var(--text-muted); font-size:8.5px; border-bottom:1px solid var(--border); }
-    td { padding:3px 6px; border-bottom:1px solid #f1f5f9; }
+    .tc-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:4px; }
+    .tc-title { font-size:13px; font-weight:700; margin-bottom:8px; color:var(--text-main); }
+    .tc-row { display:flex; justify-content:space-between; font-size:11px; padding:3px 0; }
+    .tc-row.main { border-top:1px dashed var(--border); margin-top:6px; padding-top:6px; font-weight:700; color:var(--primary); }
+    .sched-wrap { display:grid; gap:16px; margin-bottom:16px; }
+    .sched { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+    .sched-h { background:var(--primary); color:#fff; padding:8px 12px; font-size:11px; font-weight:700; letter-spacing:0.5px; }
+    table { width:100%; border-collapse:collapse; font-size:10.5px; }
+    th { background:#f8fafc; padding:6px 8px; text-align:left; font-weight:700; color:var(--text-muted); font-size:10px; border-bottom:1px solid var(--border); }
+    td { padding:6px 8px; border-bottom:1px solid #f1f5f9; }
     .r { text-align:right; } .c { text-align:center; }
-    .status-lunas { background:#d1fae5; color:#065f46; padding:1px 4px; border-radius:3px; font-size:7.5px; font-weight:700; }
-    .status-pending { background:#fef3c7; color:#92400e; padding:1px 4px; border-radius:3px; font-size:7.5px; font-weight:700; }
-    
-    .note-text { font-size:9px; color:var(--text-muted); padding:6px 10px; background:#f9fafb; border-left:3px solid var(--accent); border-radius:4px; margin-bottom:10px; line-height:1.3; }
-    
-    /* Bank Box Rata Tengah */
-    .bank-box { border:1px dashed var(--primary); background:var(--primary-light); padding:8px 10px; border-radius:6px; margin-bottom:10px; text-align:center; }
-    .bank-box .title { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--primary); margin-bottom:3px; }
-    .bank-box .acc { font-size:14px; font-weight:800; font-family:monospace; color:var(--primary); letter-spacing:1px; }
-    .bank-box .name { font-size:9px; color:var(--text-muted); margin-top:1px; }
-    
-    .info-box { background:var(--danger-light); border:1px solid #fecaca; border-radius:6px; padding:8px 10px; font-size:9px; color:#7f1d1d; line-height:1.3; }
-    
-    /* CSS KHUSUS PERJANJIAN LEGAL */
-    .legal-doc { font-family: 'Times New Roman', Times, serif; font-size: 10.5px; color: #000; }
-    .legal-doc p { margin-bottom: 5px; text-align: justify; line-height: 1.3; }
-    .doc-title { text-align:center; border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:10px; }
-    .doc-title h2 { font-size:13px; font-weight:800; text-decoration: underline; letter-spacing:0.5px; margin-bottom:2px; color: #000; }
-    .doc-number { font-size:10px; color: #000; font-family: 'Times New Roman', Times, serif; }
-    
-    .party-table { width: 100%; margin-bottom: 10px; border-collapse: collapse; }
-    .party-table td { vertical-align: top; padding: 2px 0; border: none; }
-    .party-table .label { width: 100px; font-weight: bold; }
-    .party-table .colon { width: 10px; font-weight: bold; }
-    .party-table .content { text-align: justify; line-height: 1.3; }
-
-    .pasal-title { text-align:center; font-weight:bold; margin: 10px 0 4px 0; font-size:10.5px; text-transform: uppercase; }
-    .pasal-list { padding-left:20px; font-size:10.5px; line-height:1.3; margin-bottom: 6px; }
-    .pasal-list li { margin-bottom:3px; text-align: justify; }
-
-    .signature-area { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:15px; padding-top:10px; border-top:1px solid #ccc; }
+    .status-lunas { background:#d1fae5; color:#065f46; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:700; }
+    .status-pending { background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:700; }
+    .note-text { font-size:10.5px; color:var(--text-muted); padding:10px 12px; background:#f9fafb; border-left:3px solid var(--accent); border-radius:4px; margin-bottom:16px; line-height:1.6; }
+    .bank-box { border:1px dashed var(--primary); background:var(--primary-light); padding:12px 16px; border-radius:8px; margin-bottom:16px; }
+    .bank-box .title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--primary); margin-bottom:4px; }
+    .bank-box .acc { font-size:15px; font-weight:800; font-family:monospace; color:var(--primary); }
+    .bank-box .name { font-size:11px; color:var(--text-muted); }
+    .info-box { background:var(--danger-light); border:1px solid #fecaca; border-radius:8px; padding:12px 16px; font-size:10.5px; color:#7f1d1d; line-height:1.6; }
+    .agreement-container { padding:4px 0; }
+    .doc-title { text-align:center; border-bottom:2px solid var(--primary); padding-bottom:12px; margin-bottom:16px; }
+    .doc-title h2 { font-size:15px; font-weight:800; color:var(--primary); letter-spacing:1px; margin-bottom:4px; }
+    .doc-number { font-size:11px; color:var(--text-muted); font-family:monospace; }
+    .pasal-title { background:var(--primary-light); color:var(--primary); padding:8px 14px; border-radius:6px; font-size:11px; font-weight:800; text-align:center; margin:16px 0 10px 0; letter-spacing:1px; text-transform:uppercase; border-left:4px solid var(--primary); }
+    .pasal-list { padding-left:20px; font-size:11px; line-height:1.7; }
+    .pasal-list li { margin-bottom:6px; }
+    .agreement-container p { font-size:11px; line-height:1.7; margin-bottom:8px; text-align:justify; }
+    .signature-area { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:32px; padding-top:24px; border-top:1px dashed var(--border); }
     .sig-box { text-align:center; }
-    .sig-title { font-size:10.5px; font-weight:bold; margin-bottom:4px; }
-    
-    /* E-Sign & Materai (Dikompres agar tidak terpotong) */
-    .e-sign-box { border: 1.5px solid var(--success); background:#f0fdf4; border-radius:6px; padding:6px; margin:4px auto; width: 90%; text-align:center; }
-    .e-sign-header { font-size:8px; font-weight:bold; color:var(--success); display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:2px; font-family: 'Inter', sans-serif; }
-    .e-sign-name { font-size:11px; font-weight:bold; color:#000; margin-bottom:1px; font-family: 'Inter', sans-serif; }
-    .e-sign-text { font-size:7.5px; color:#555; line-height:1.1; font-family: 'Inter', sans-serif; margin-bottom: 2px; }
-    .barcode-svg { width: 80%; height: 20px; margin: 0 auto; background: repeating-linear-gradient(to right, #000 0, #000 2px, transparent 2px, transparent 4px, #000 4px, #000 5px, transparent 5px, transparent 8px, #000 8px, #000 11px, transparent 11px, transparent 12px); }
-    
-    .materai-box { border: 1.5px dashed #999; background:#f9f9f9; border-radius:6px; padding:10px 6px; margin:4px auto; width: 90%; font-size:9px; color: #555; font-weight: bold; display:flex; align-items:center; justify-content:center; height: 60px; }
-    .sig-name { font-size:10.5px; font-weight:bold; color:#000; margin-top:4px; text-decoration: underline; }
-    .sig-role { font-size:9.5px; color:#000; margin-top:1px; }
-
-    .footer { background:#f8fafc; padding:6px 16px; text-align:center; font-size:8px; color:var(--text-muted); border-top:1px solid var(--border); font-family:'Inter', sans-serif; margin-top: auto; }
-    
-    /* PENGATURAN KHUSUS SAAT DI-PRINT AGAR PAS 1 HALAMAN */
-    @media print { 
-        body { background:#fff; padding:0; margin:0; } 
-        .page { box-shadow:none; border-radius:0; margin:0; width:100%; min-height:auto; height:auto; } 
-        .btn-print-wrap { display:none; } 
-        .page + .page { page-break-before:always; }
-        .page { page-break-after: always; }
-        .page:last-child { page-break-after: auto; }
-    }
+    .sig-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:10px; }
+    .sig-name { font-size:12px; font-weight:800; color:var(--text-main); margin-top:14px; }
+    .sig-role { font-size:10px; color:var(--text-muted); margin-top:2px; }
+    .cert-sig-box { border:1.5px solid var(--success); background:var(--success-light); border-radius:8px; padding:10px; margin:12px 0; }
+    .cert-sig-header { font-size:8.5px; font-weight:800; color:var(--success); letter-spacing:1px; margin-bottom:6px; display:flex; align-items:center; justify-content:center; gap:4px; }
+    .cert-sig-name { font-size:11px; font-weight:800; color:var(--text-main); margin-bottom:4px; }
+    .cert-sig-text { font-size:8.5px; color:var(--text-muted); line-height:1.4; }
+    .cert-sig-barcode { margin-top:8px; display:flex; justify-content:center; }
+    .ematerai-box { border:2px dashed var(--accent); background:var(--accent-light); border-radius:8px; padding:24px 10px; margin:12px 0; font-size:10px; color:var(--accent); font-weight:700; letter-spacing:0.5px; }
+    .ematerai-box::before { content:'🔖'; display:block; font-size:20px; margin-bottom:6px; }
+    .footer { background:#f8fafc; padding:12px 24px; text-align:center; font-size:9.5px; color:var(--text-muted); border-top:1px solid var(--border); }
+    @media print { body { background:#fff; padding:0; } .page { box-shadow:none; border-radius:0; margin:0; } .btn-print-wrap { display:none; } .page + .page { page-break-before:always; } }
     """
 
-    # ====== HALAMAN 1: INVOICE (PDF 1) ======
-    html_page1 = f"""
+    # ====== HALAMAN 1: INVOICE ======
+    metode_badge = m_metode
+    status_color = "var(--success)" if m_status == "Berjalan" else ("var(--primary)" if m_status == "Lunas" else "var(--danger)")
+    status_upper = m_status.upper()
+
+    html1 = f"""
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>Invoice Kredit - GRACE'S ELECTRONIC</title>
+    <style>{shared_css}</style>
+</head>
+<body>
+    <div class="btn-print-wrap">
+        <button class="btn-print" onclick="window.print()">🖨️ Cetak / Simpan sebagai PDF</button>
+    </div>
     <div class="page">
         <header class="hdr">
             <div class="brand">
                 <h1>GRACE'S ELECTRONIC</h1>
                 <div class="tag">CASH &amp; CREDIT - AUTHORIZED RETAILER</div>
-                <div class="addr">{ALAMAT_TOKO}<br>HP/WA: {NO_TELP_TOKO}</div>
+                <div class="addr">Jl. Barong Tongkok, Kutai Barat<br>HP/WA: {NO_TELP_TOKO}</div>
             </div>
             <div class="title-box">
                 <div class="badge-inv">Invoice Kredit</div>
@@ -2114,8 +2489,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
         </header>
         <div class="meta">
-            <div>Status: <b style="color:var(--success);">● {m_status.upper()}</b></div>
-            <div>Metode: <b>{m_metode}</b></div>
+            <div>Status: <b style="color:{status_color};">● {status_upper}</b></div>
+            <div>Metode: <b>{metode_badge}</b></div>
         </div>
         <div class="body">
             <div class="grid-2">
@@ -2123,7 +2498,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     <div class="card-title">👤 Penerima / Customer</div>
                     <div class="kv-row"><div class="k">Nama</div><div class="v">{d['cn']}</div></div>
                     <div class="kv-row"><div class="k">Telepon</div><div class="v">{d['telepon']}</div></div>
-                    <div class="kv-row"><div class="k">Alamat</div><div class="v" style="font-weight:400;font-size:9.5px;">{d['alamat']}</div></div>
+                    <div class="kv-row"><div class="k">Alamat</div><div class="v" style="font-weight:400;font-size:10.5px;">{d['alamat']}</div></div>
                 </div>
                 <div class="card">
                     <div class="card-title">📱 Detail Produk</div>
@@ -2153,7 +2528,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 </div>
             </div>
             <div class="note-text">
-                *Catatan: Terdapat Biaya Administrasi/Materai sebesar <b>Rp 10.000</b> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir. Total yang disetor pada bulan ke-{tenor_asli} adalah <b>{format_rp(cicilan_terakhir)}</b>.
+                *Catatan: Terdapat Biaya Administrasi/Materai sebesar <b>{format_rp(biaya_materai)}</b> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir. Total yang disetor pada bulan ke-{tenor_asli} adalah <b>{format_rp(cicilan_terakhir)}</b>.
             </div>
             <div class="bank-box">
                 <div class="title">Pembayaran Transfer Resmi</div>
@@ -2166,20 +2541,33 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
         </div>
         <footer class="footer">
-            <div style="font-weight:700;color:var(--primary);margin-bottom:1px;">GRACE'S ELECTRONIC</div>
+            <div style="font-weight:700;color:var(--primary);margin-bottom:2px;">GRACE'S ELECTRONIC</div>
             <div>Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak.</div>
         </footer>
     </div>
-    """
+</body>
+</html>
+"""
 
-    # ====== HALAMAN 2: PERJANJIAN (FORMAT LEGAL) ======
-    html_page2 = f"""
+    # ====== HALAMAN 2: PERJANJIAN ======
+    html2 = f"""
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>Perjanjian Kredit - GRACE'S ELECTRONIC</title>
+    <style>{shared_css}</style>
+</head>
+<body>
+    <div class="btn-print-wrap">
+        <button class="btn-print" onclick="window.print()">🖨️ Cetak / Simpan sebagai PDF</button>
+    </div>
     <div class="page">
         <header class="hdr">
             <div class="brand">
                 <h1>GRACE'S ELECTRONIC</h1>
                 <div class="tag">CASH &amp; CREDIT - AUTHORIZED RETAILER</div>
-                <div class="addr">{ALAMAT_TOKO}<br>HP/WA: {NO_TELP_TOKO}</div>
+                <div class="addr">Jl. Barong Tongkok, Kutai Barat<br>HP/WA: {NO_TELP_TOKO}</div>
             </div>
             <div class="title-box">
                 <div class="badge-inv">Surat Perjanjian Kredit</div>
@@ -2189,428 +2577,92 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         </header>
         <div class="meta">
             <div>Dokumen: <b>Perjanjian Pembiayaan</b></div>
-            <div>Nomor: <b>GRC-INV-{kid}/PERJ/2026</b></div>
+            <div>Nomor: <b>GRC-INV-{kid}/PERJ/{m_tgl_cetak.year}</b></div>
             <div>Tenor: <b>{tenor_asli} Bulan</b></div>
         </div>
-        <div class="body legal-doc">
-            <div class="doc-title">
-                <h2>SURAT PERJANJIAN PEMBIAYAAN KONSUMEN</h2>
-                <div class="doc-number">Nomor: GRC-INV-{kid}/PERJ/2026</div>
-            </div>
-
-            <p>Pada hari ini, <b>{tgl_cetak_str}</b>, yang bertanda tangan di bawah ini:</p>
-
-            <table class="party-table">
-                <tr>
-                    <td class="label">PIHAK PERTAMA</td>
-                    <td class="colon">:</td>
-                    <td class="content"><b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Berdasarkan Akta Notaris {NAMA_NOTARIS} Nomor {NOMOR_AKTA} Tanggal {TANGGAL_AKTA}. Dalam hal ini diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</td>
-                </tr>
-                <tr>
-                    <td class="label">PIHAK KEDUA</td>
-                    <td class="colon">:</td>
-                    <td class="content"><b>{d['cn'].upper()}</b>, lahir di {tgl_lahir_cust}, Warga Negara Indonesia, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: <b>{nik_cust}</b>.</td>
-                </tr>
-            </table>
-
-            <p>Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan dan syarat-syarat sebagai berikut:</p>
-
-            <div class="pasal-title">PASAL 1<br>OBJEK PERJANJIAN</div>
-            <p>Pihak Pertama setuju untuk membiayai pembelian barang berupa <b>{d['pn']}</b> (SKU: GRC-{d['produk_id']}) kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
-
-            <div class="pasal-title">PASAL 2<br>KETENTUAN PEMBAYARAN</div>
-            <ol class="pasal-list">
-                <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar <b>{format_rp(m_dp)}</b>.</li>
-                <li>Jangka waktu pembiayaan adalah <b>{tenor_asli} (bulan)</b>, dengan angsuran bulanan sebesar <b>{format_rp(m_cicilan)}</b>.</li>
-                <li>Angsuran pertama wajib dibayarkan pada tanggal <b>{sched_1[0]['jatuh_tempo']}</b> dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan angsuran terakhir.</li>
-                <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: <b>Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT</b>.</li>
-                <li>Pihak Kedua dikenakan <b>Biaya Administrasi berupa bea materai sebesar Rp 10.000</b> yang posisinya <b>BERADA DI LUAR nominal angsuran</b>. Biaya tersebut akan ditagihkan dan dibayarkan bersamaan dengan setoran angsuran terakhir. Dengan demikian, total pembayaran pada bulan ke-{tenor_asli} adalah sebesar <b>{format_rp(cicilan_terakhir)}</b>.</li>
-            </ol>
-
-            <div class="pasal-title">PASAL 3<br>DENDA DAN WANPRESTASI</div>
-            <ol class="pasal-list">
-                <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari jumlah angsuran yang tertunggak.</li>
-                <li>Pihak Kedua dinyatakan wanprestasi apabila <b>gagal</b> membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
-                <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke <b>Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking</b>, yang mengakibatkan Debitur masuk dalam daftar hitam (<i>blacklist</i>) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
-            </ol>
-
-            <div class="pasal-title">PASAL 4<br>PENYELESAIAN SENGKETA DAN DOMISILI</div>
-            <ol class="pasal-list">
-                <li>Segala perselisihan yang timbul dari perjanjian ini akan diselesaikan secara musyawarah mufakat oleh Para Pihak.</li>
-                <li>Apabila musyawarah tidak mencapai kesepakatan, Para Pihak sepakat untuk menyelesaikannya melalui <b>Lembaga Alternatif Penyelesaian Sengketa Sektor Jasa Keuangan (LAPS SJK)</b> atau <b>Pengadilan Negeri Kutai Barat</b>.</li>
-                <li>Kreditur dilarang melakukan penarikan objek pembiayaan secara paksa tanpa prosedur hukum yang sah sesuai dengan POJK Nomor 22 Tahun 2023 dan Putusan Mahkamah Konstitusi Nomor 18/PUU-XVII/2019.</li>
-                <li>Para pihak memilih domisili hukum yang umum dan tetap di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
-            </ol>
-
-            <div class="pasal-title">PASAL 5<br>KETENTUAN PENUTUP</div>
-            <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
-
-            <div class="signature-area">
-                <div class="sig-box">
-                    <div class="sig-title">PIHAK PERTAMA (KREDITUR)</div>
-                    
-                    <div class="e-sign-box">
-                        <div class="e-sign-header">
-                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                            TERVERIFIKASI ELEKTRONIK
-                        </div>
-                        <div class="e-sign-name">ADI HARIANTO, S.E.</div>
-                        <div class="e-sign-text">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
-                        <div class="barcode-svg"></div>
-                    </div>
-
-                    <div class="sig-name">ADI HARIANTO, S.E.</div>
-                    <div class="sig-role">Direktur CV. Grace Haven Transport</div>
+        <div class="body">
+            <div class="agreement-container">
+                <div class="doc-title">
+                    <h2>PERJANJIAN PEMBIAYAAN KONSUMEN</h2>
+                    <div class="doc-number">Nomor: GRC-INV-{kid}/PERJ/{m_tgl_cetak.year}</div>
                 </div>
-                <div class="sig-box">
-                    <div class="sig-title">PIHAK KEDUA (DEBITUR)</div>
-                    <div class="materai-box">Materai 10.000</div>
-                    <div class="sig-name">{d['cn'].upper()}</div>
-                    <div class="sig-role">Pemegang KTP NIK: {nik_cust}</div>
+
+                <p>Pada hari ini, <b>{tgl_cetak_str}</b>, yang bertanda tangan di bawah ini:</p>
+
+                <div class="card" style="margin-bottom:10px;">
+                    <div class="card-title">🏢 PIHAK PERTAMA (KREDITUR)</div>
+                    <p style="margin:0;"><b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di Jl. Barong Tongkok, Kutai Barat. Akta Notaris {NAMA_NOTARIS} Nomor {NOMOR_AKTA} Tanggal {TANGGAL_AKTA}, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</p>
+                </div>
+
+                <div class="card" style="margin-bottom:10px;">
+                    <div class="card-title">👤 PIHAK KEDUA (DEBITUR)</div>
+                    <p style="margin:0;"><b>{d['cn']}</b>, lahir di {tgl_lahir_cust}, WNI, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang KTP dengan NIK: <b>{nik_cust}</b>.</p>
+                </div>
+
+                <p>Kedua belah pihak sepakat mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan:</p>
+
+                <div class="pasal-title">Pasal 1 — Objek Perjanjian</div>
+                <p>Pihak Pertama setuju membiayai pembelian barang berupa <b>{d['pn']}</b> kepada Pihak Kedua, dan Pihak Kedua setuju membeli barang tersebut secara angsuran sesuai ketentuan dalam perjanjian ini.</p>
+
+                <div class="pasal-title">Pasal 2 — Ketentuan Pembayaran</div>
+                <ol class="pasal-list">
+                    <li>Uang Muka (DP) yang telah dibayarkan Pihak Kedua sebesar <b>{format_rp(m_dp)}</b>.</li>
+                    <li>Jangka waktu pembiayaan <b>{tenor_asli} (bulan)</b>, dengan angsuran bulanan <b>{format_rp(m_cicilan)}</b>.</li>
+                    <li>Angsuran pertama wajib dibayar tanggal <b>{sched_1[0]['jatuh_tempo'] if sched_1 else '-'}</b> dan selanjutnya paling lambat tanggal yang sama setiap bulan.</li>
+                    <li>Pembayaran dilakukan tunai di toko atau transfer ke rekening resmi: <b>Bank Mandiri No. Rek. 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT</b>.</li>
+                    <li>Pihak Kedua dikenakan <b>Biaya Administrasi (bea materai) {format_rp(biaya_materai)}</b> di luar nominal angsuran, ditagih bersamaan angsuran terakhir. Total bulan ke-{tenor_asli}: <b>{format_rp(cicilan_terakhir)}</b>.</li>
+                </ol>
+
+                <div class="pasal-title">Pasal 3 — Denda dan Wanprestasi</div>
+                <ol class="pasal-list">
+                    <li>Keterlambatan pembayaran dikenakan denda <b>{get_pengaturan_float("denda_per_hari_persen", 0.4):.2f}% per hari</b> dari angsuran tertunggak.</li>
+                    <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran 2 (dua) bulan berturut-turut.</li>
+                    <li>Apabila Debitur mangkir, Kreditur berhak melaporkan ke <b>SLIK OJK</b> dan/atau <b>BI Checking</b> yang mengakibatkan Debitur masuk daftar hitam (blacklist).</li>
+                </ol>
+
+                <div class="pasal-title">Pasal 4 — Penyelesaian Sengketa &amp; Domisili</div>
+                <ol class="pasal-list">
+                    <li>Perselisihan diselesaikan secara musyawarah mufakat.</li>
+                    <li>Apabila gagal, diselesaikan melalui <b>LAPS SJK</b> atau <b>Pengadilan Negeri Kutai Barat</b>.</li>
+                    <li>Kreditur dilarang menarik objek pembiayaan secara paksa tanpa prosedur hukum sesuai POJK No. 22 Tahun 2023 dan Putusan MK No. 18/PUU-XVII/2019.</li>
+                    <li>Para pihak memilih domisili hukum di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
+                </ol>
+
+                <div class="pasal-title">Pasal 5 — Ketentuan Penutup</div>
+                <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Dibuat rangkap 2 (dua), masing-masing berkekuatan hukum sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
+
+                <div class="signature-area">
+                    <div class="sig-box">
+                        <div class="sig-title">Pihak Pertama (Kreditur)</div>
+                        <div class="cert-sig-box">
+                            <div class="cert-sig-header">🛡️ TERSERTIFIKASI</div>
+                            <div class="cert-sig-name">ADI HARIANTO, S.E.</div>
+                            <div class="cert-sig-text">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
+                        </div>
+                        <div class="sig-name">ADI HARIANTO, S.E.</div>
+                        <div class="sig-role">Direktur CV. Grace Haven Transport</div>
+                    </div>
+                    <div class="sig-box">
+                        <div class="sig-title">Pihak Kedua (Debitur)</div>
+                        <div class="ematerai-box">Tempel e-Meterai / TTD Basah</div>
+                        <div class="sig-name">{d['cn']}</div>
+                        <div class="sig-role">Pemegang KTP NIK: {nik_cust}</div>
+                    </div>
                 </div>
             </div>
         </div>
         <footer class="footer">
-            <div style="font-weight:700;color:var(--primary);margin-bottom:1px;">GRACE'S ELECTRONIC</div>
+            <div style="font-weight:700;color:var(--primary);margin-bottom:2px;">GRACE'S ELECTRONIC</div>
             <div>Dokumen ini sah dan mengikat secara hukum.</div>
         </footer>
     </div>
-    """
+</body>
+</html>
+"""
 
-    # ====== GABUNG & RENDER ======
-    full_html = f"""
-    <!DOCTYPE html>
-    <html lang="id">
-    <head>
-        <meta charset="utf-8">
-        <title>Invoice Kredit - GRACE'S ELECTRONIC</title>
-        <style>{shared_css}</style>
-    </head>
-    <body>
-        <div class="btn-print-wrap">
-            <button class="btn-print" onclick="window.print()">🖨️ Cetak / Simpan sebagai PDF</button>
-        </div>
-        {html_page1}
-        {html_page2}
-    </body>
-    </html>
-    """
+    # ====== TAMPILKAN ======
+    st.markdown('<div class="section-header"><h3>📄 Invoice Kredit (Halaman 1)</h3></div>', unsafe_allow_html=True)
+    components.html(html1, height=1400, scrolling=True)
 
-    components.html(full_html, height=1900, scrolling=True)
-
-    # ====== DOWNLOAD BUTTONS ======
-    st.markdown('<div class="section-header"><h3>💾 Unduh Dokumen</h3></div>', unsafe_allow_html=True)
-    col_dl1, col_dl2 = st.columns(2)
-
-    with col_dl1:
-        st.download_button(
-            "📄 Download HTML (siap print PDF)",
-            data=full_html,
-            file_name=f"Invoice_Perjanjian_{kid}.html",
-            mime="text/html",
-            use_container_width=True
-        )
-
-    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
-# ==================== 11. OVERDUE & DENDA ====================
-elif pilihan == "🚨 Overdue & Denda":
-    st.markdown('<div class="main-header"><h1>🚨 Overdue & Denda</h1></div>', unsafe_allow_html=True)
-    tgl_skrg = datetime.now().strftime("%Y-%m-%d")
-    df_overdue = pd.read_sql_query("""
-        SELECT k.id, c.nama as customer, c.telepon, p.nama as produk, k.cicilan_bulan, k.jatuh_tempo, k.sisa_hutang
-        FROM kredit k JOIN customer c ON k.customer_id = c.id JOIN produk p ON k.produk_id = p.id
-        WHERE k.status='Berjalan' AND k.jatuh_tempo < ? ORDER BY k.jatuh_tempo ASC
-    """, conn, params=(tgl_skrg,))
-    
-    if df_overdue.empty:
-        st.success("✅ Tidak ada kredit yang menunggak.")
-    else:
-        st.warning(f"⚠️ Ada **{len(df_overdue)}** akun yang melewati jatuh tempo.")
-        denda_persen = get_pengaturan_float("denda_per_hari_persen", 0.4)
-        
-        for _, r in df_overdue.iterrows():
-            tgl_tempo = datetime.strptime(r['jatuh_tempo'], "%Y-%m-%d").date()
-            hari_telat = (datetime.now().date() - tgl_tempo).days
-            denda = hitung_denda(r['cicilan_bulan'], hari_telat)
-            
-            with st.expander(f"#{r['id']} - {r['customer']} - {r['produk']} (Telat {hari_telat} hari)"):
-                st.write(f"**Telepon:** {r['telepon']}")
-                st.write(f"**Sisa Hutang:** {format_rp(r['sisa_hutang'])}")
-                st.write(f"**Cicilan:** {format_rp(r['cicilan_bulan'])}")
-                st.write(f"**Denda ({denda_persen}%/hari):** {format_rp(denda)}")
-                st.error("Segera hubungi customer untuk penagihan!")
-
-
-# ==================== 12. ALERT & REMINDER ====================
-elif pilihan == "🔔 Alert & Reminder":
-    st.markdown('<div class="main-header"><h1>🔔 Alert & Reminder</h1><p>Pusat notifikasi tagihan dan pengingat</p></div>', unsafe_allow_html=True)
-    
-    tab1, tab2, tab3 = st.tabs(["📅 Jatuh Tempo Minggu Ini", "⏰ Jatuh Tempo Bulan Ini", "📦 Stok Kritis"])
-    
-    with tab1:
-        tgl_skrg = datetime.now().strftime("%Y-%m-%d")
-        tgl_7 = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-        
-        df_dekat = pd.read_sql_query("""
-            SELECT c.nama as customer, c.telepon, p.nama as produk, k.cicilan_bulan, k.jatuh_tempo, k.sisa_hutang
-            FROM kredit k 
-            JOIN customer c ON k.customer_id = c.id 
-            JOIN produk p ON k.produk_id = p.id 
-            WHERE k.status='Berjalan' AND k.jatuh_tempo BETWEEN ? AND ? 
-            ORDER BY k.jatuh_tempo ASC
-        """, conn, params=(tgl_skrg, tgl_7))
-        
-        if df_dekat.empty:
-            st.success("✅ Tidak ada jatuh tempo dalam 7 hari ke depan.")
-        else:
-            st.warning(f"⚠️ Ada **{len(df_dekat)}** akun yang akan jatuh tempo minggu ini.")
-            df_show = df_dekat.copy()
-            df_show['cicilan_bulan'] = df_show['cicilan_bulan'].apply(format_rp)
-            df_show['sisa_hutang'] = df_show['sisa_hutang'].apply(format_rp)
-            st.dataframe(df_show, use_container_width=True, hide_index=True)
-
-    with tab2:
-        tgl_skrg = datetime.now().strftime("%Y-%m-%d")
-        tgl_30 = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-        
-        df_bulan = pd.read_sql_query("""
-            SELECT c.nama as customer, c.telepon, p.nama as produk, k.cicilan_bulan, k.jatuh_tempo, k.sisa_hutang
-            FROM kredit k 
-            JOIN customer c ON k.customer_id = c.id 
-            JOIN produk p ON k.produk_id = p.id 
-            WHERE k.status='Berjalan' AND k.jatuh_tempo BETWEEN ? AND ? 
-            ORDER BY k.jatuh_tempo ASC
-        """, conn, params=(tgl_skrg, tgl_30))
-        
-        if df_bulan.empty:
-            st.success("✅ Tidak ada jatuh tempo dalam 30 hari ke depan.")
-        else:
-            st.info(f"ℹ️ Ada **{len(df_bulan)}** akun yang akan jatuh tempo bulan ini.")
-            df_show = df_bulan.copy()
-            df_show['cicilan_bulan'] = df_show['cicilan_bulan'].apply(format_rp)
-            df_show['sisa_hutang'] = df_show['sisa_hutang'].apply(format_rp)
-            st.dataframe(df_show, use_container_width=True, hide_index=True)
-
-    with tab3:
-        df_kritis = pd.read_sql_query("SELECT nama, kategori, stok FROM produk WHERE stok <= 3 ORDER BY stok ASC", conn)
-        if df_kritis.empty:
-            st.success("✅ Semua stok dalam kondisi aman (> 3 unit).")
-        else:
-            st.error(f"🚨 Ada **{len(df_kritis)}** produk dengan stok kritis (≤ 3 unit). Segera lakukan restock!")
-            st.dataframe(df_kritis, use_container_width=True, hide_index=True)
-
-# ==================== 13. LAPORAN & ANALITIK ====================
-elif pilihan == "📊 Laporan & Analitik":
-    st.markdown('<div class="main-header"><h1>📊 Laporan & Analitik</h1></div>', unsafe_allow_html=True)
-    st.info("Fitur ini menyajikan data visual performa toko.")
-    
-    tab1, tab2 = st.tabs(["📈 Ringkasan", "📑 Export Data"])
-    
-    with tab1:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Distribusi Status Kredit**")
-            df_status = pd.read_sql_query("SELECT status, COUNT(*) as jumlah FROM kredit GROUP BY status", conn)
-            if not df_status.empty:
-                st.bar_chart(df_status.set_index('status'))
-                
-        with col2:
-            st.markdown("**Pendapatan per Bulan (Cash + Cicilan)**")
-            df_pendapatan = pd.read_sql_query("""
-                SELECT substr(tanggal,1,7) as bulan, SUM(total_harga) as total_cash FROM transaksi_cash GROUP BY bulan
-            """, conn)
-            if not df_pendapatan.empty:
-                st.line_chart(df_pendapatan.set_index('bulan'))
-                
-    with tab2:
-        st.subheader("Export Laporan ke Excel")
-        if st.button("Generate Laporan Excel"):
-            try:
-                df_invoice = pd.read_sql_query("SELECT * FROM kredit", conn)
-                df_pelanggan = pd.read_sql_query("SELECT * FROM customer", conn)
-                df_serah = pd.read_sql_query("SELECT * FROM serah_terima", conn)
-                
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                    df_invoice.to_excel(writer, sheet_name='Data Invoice', index=False)
-                    df_pelanggan.to_excel(writer, sheet_name='Data Pelanggan', index=False)
-                    df_serah.to_excel(writer, sheet_name='Serah Terima', index=False)
-                
-                st.download_button(
-                    label="⬇️ Download Laporan Lengkap (.xlsx)",
-                    data=buffer.getvalue(),
-                    file_name=f"Laporan_GraceStore_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            except Exception as e:
-                st.error(f"❌ Gagal membuat Excel: {e}")
-
-# ==================== 14. MODAL VS PROFIT ====================
-elif pilihan == "👕 Modal vs Profit":
-    st.markdown('<div class="main-header"><h1>👕 Laporan Modal vs Profit Pakaian</h1></div>', unsafe_allow_html=True)
-    df_pk = pd.read_sql_query("SELECT nama, kategori, harga_modal, harga_jual FROM produk WHERE kategori IN ('Pakaian', 'Atasan', 'Bawahan', 'Dress', 'Outerwear', 'Batik')", conn)
-    
-    if df_pk.empty:
-        st.info("Belum ada data produk pakaian.")
-    else:
-        df_pk['harga_modal'] = pd.to_numeric(df_pk['harga_modal'], errors='coerce').fillna(0)
-        df_pk['harga_jual'] = pd.to_numeric(df_pk['harga_jual'], errors='coerce').fillna(0)
-        
-        df_pk['profit'] = df_pk['harga_jual'] - df_pk['harga_modal']
-        
-        df_pk['harga_modal'] = df_pk['harga_modal'].apply(format_rp)
-        df_pk['harga_jual'] = df_pk['harga_jual'].apply(lambda x: format_rp(x) if x > 0 else "Belum diset")
-        df_pk['profit'] = df_pk['profit'].apply(lambda x: format_rp(x) if x != 0 else "-")
-        
-        st.dataframe(df_pk, use_container_width=True, hide_index=True)
-        st.caption("Catatan: Produk dengan harga jual 'Belum diset' tidak akan bisa dijual secara kredit sampai harganya diisi di menu Stok Barang.")
-
-# ==================== 15. BACKUP, CETAK & IMPOR ====================
-elif pilihan == "💾 Backup, Cetak & Impor":
-    st.markdown('<div class="main-header"><h1>💾 Backup, Cetak & Impor</h1></div>', unsafe_allow_html=True)
-    
-    tab_backup, tab_excel = st.tabs(["💾 Backup Database", "📑 Cetak Laporan Excel"])
-    
-    with tab_backup:
-        st.subheader("Backup Database Manual")
-        st.warning("⚠️ **PENTING:** Simpan file `.db` ini ke tempat aman (Google Drive / Flashdisk) secara berkala untuk mencegah kehilangan data.")
-        
-        try:
-            with open(DB_PATH, "rb") as f:
-                db_bytes = f.read()
-            
-            st.download_button(
-                label="💾 Download Database Terbaru (toko_kredit.db)",
-                data=db_bytes,
-                file_name=f"backup_toko_kredit_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
-                mime="application/x-sqlite3",
-                use_container_width=True
-            )
-        except FileNotFoundError:
-            st.error("❌ File database tidak ditemukan.")
-            
-        st.markdown("---")
-        st.subheader("Backup Otomatis (Harian)")
-        st.info("Sistem secara otomatis membuat backup harian di folder `backups/` setiap kali aplikasi dijalankan pada hari baru.")
-        
-        if os.path.exists(BACKUP_DIR):
-            list_backup = sorted(os.listdir(BACKUP_DIR), reverse=True)
-            if list_backup:
-                st.write("**Daftar Backup Otomatis Tersedia:**")
-                for b in list_backup[:5]:
-                    st.write(f"- `{b}`")
-            else:
-                st.write("Belum ada backup otomatis.")
-
-    with tab_excel:
-        st.subheader("Cetak Laporan Lengkap ke Excel")
-        st.info("Fitur ini menggunakan `xlsxwriter` untuk menghasilkan file Excel multi-sheet yang rapi.")
-        
-        if st.button("📊 Generate Laporan Excel", use_container_width=True):
-            try:
-                df_invoice = pd.read_sql_query("SELECT * FROM kredit", conn)
-                if not df_invoice.empty:
-                    df_invoice['total_hutang'] = pd.to_numeric(df_invoice['total_hutang'], errors='coerce').fillna(0)
-                    
-                df_pelanggan = pd.read_sql_query("SELECT * FROM customer", conn)
-                df_serah = pd.read_sql_query("SELECT * FROM serah_terima", conn)
-                df_cash = pd.read_sql_query("SELECT * FROM transaksi_cash", conn)
-                
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                    df_invoice.to_excel(writer, sheet_name='Data Kredit', index=False)
-                    df_cash.to_excel(writer, sheet_name='Data Jual Cash', index=False)
-                    df_pelanggan.to_excel(writer, sheet_name='Data Pelanggan', index=False)
-                    df_serah.to_excel(writer, sheet_name='Bukti Serah Terima', index=False)
-                
-                st.download_button(
-                    label="⬇️ Download Laporan Lengkap (.xlsx)",
-                    data=buffer.getvalue(),
-                    file_name=f"Laporan_GraceStore_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-                flash("✅ Laporan Excel berhasil dibuat!", "success")
-            except Exception as e:
-                st.error(f"❌ Gagal membuat Excel: {e}")
-
-# ==================== 16. MANAJEMEN USER ====================
-elif pilihan == "👤 Manajemen User" and st.session_state.role == "admin":
-    st.markdown('<div class="main-header"><h1>👤 Manajemen User</h1></div>', unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["➕ Tambah User Baru", "📋 Daftar & Edit User"])
-    
-    with tab1:
-        with st.form("form_add_user"):
-            st.subheader("Form Tambah User")
-            new_user = st.text_input("Username (unik)")
-            new_pass = st.text_input("Password", type="password")
-            new_nama = st.text_input("Nama Lengkap")
-            new_role = st.selectbox("Role", ["admin", "kasir"])
-            
-            if st.form_submit_button("💾 Simpan User"):
-                if not new_user or not new_pass or not new_nama:
-                    st.error("❌ Semua field wajib diisi!")
-                else:
-                    try:
-                        c.execute("INSERT INTO users (username, password, nama_lengkap, role, aktif) VALUES (?,?,?,?,1)",
-                                  (new_user, hash_password(new_pass), new_nama, new_role))
-                        conn.commit()
-                        log_aksi(st.session_state.username, "TAMBAH_USER", new_user)
-                        flash(f"✅ User {new_user} berhasil ditambahkan!", "success")
-                        st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("❌ Username sudah digunakan, pilih username lain.")
-                    except Exception as e:
-                        conn.rollback()
-                        st.error(f"❌ Gagal: {e}")
-                        
-    with tab2:
-        df_users = pd.read_sql_query("SELECT id, username, nama_lengkap, role, aktif FROM users ORDER BY id", conn)
-        st.dataframe(df_users, use_container_width=True, hide_index=True)
-        
-        st.markdown("---")
-        st.subheader("Edit / Nonaktifkan User")
-        
-        opsi_user = {f"{r['username']} ({r['nama_lengkap']})": r['id'] for _, r in df_users.iterrows()}
-        pilih_user = st.selectbox("Pilih User", list(opsi_user.keys()))
-        uid_edit = opsi_user[pilih_user]
-        
-        row_u = df_users[df_users['id'] == uid_edit].iloc[0]
-        
-        with st.form("form_edit_user"):
-            edit_nama = st.text_input("Nama Lengkap", value=row_u['nama_lengkap'])
-            edit_role = st.selectbox("Role", ["admin", "kasir"], index=0 if row_u['role'] == 'admin' else 1)
-            edit_aktif = st.selectbox("Status Aktif", [1, 0], index=0 if row_u['aktif'] == 1 else 1, format_func=lambda x: "Aktif" if x == 1 else "Nonaktif")
-            edit_pass = st.text_input("Password Baru (Biarkan kosong jika tidak diganti)", type="password")
-            
-            if st.form_submit_button("💾 Update User"):
-                try:
-                    if edit_pass:
-                        c.execute("UPDATE users SET nama_lengkap=?, role=?, aktif=?, password=? WHERE id=?",
-                                  (edit_nama, edit_role, edit_aktif, hash_password(edit_pass), uid_edit))
-                    else:
-                        c.execute("UPDATE users SET nama_lengkap=?, role=?, aktif=? WHERE id=?",
-                                  (edit_nama, edit_role, edit_aktif, uid_edit))
-                    conn.commit()
-                    log_aksi(st.session_state.username, "EDIT_USER", f"ID {uid_edit}")
-                    flash("✅ Data user berhasil diupdate!", "success")
-                    st.rerun()
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"❌ Gagal: {e}")
-
-# ==================== 17. LOG AKTIVITAS ====================
-elif pilihan == "📝 Log Aktivitas" and st.session_state.role == "admin":
-    st.markdown('<div class="main-header"><h1>📝 Log Aktivitas Sistem</h1></div>', unsafe_allow_html=True)
-    st.info("Catatan semua aktivitas yang dilakukan oleh pengguna di dalam sistem.")
-    
-    df_log = pd.read_sql_query("SELECT waktu, username, aksi, detail FROM log_aktivitas ORDER BY id DESC LIMIT 100", conn)
-    
-    if df_log.empty:
-        st.write("Belum ada aktivitas tercatat.")
-    else:
-        st.dataframe(df_log, use_container_width=True, hide_index=True)
-        
-    if st.button("🔄 Refresh Log"):
-        st.rerun()
+    st.markdown('<div class="section-header"><h3>📜 Surat Perjanjian (Halaman 2)</h3></div>', unsafe_allow_html=True)
+    components.html(html2, height=1700, scrolling=True)
