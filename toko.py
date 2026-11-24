@@ -956,11 +956,22 @@ elif pilihan == "🛒 Jual Cash":
                 opsi_edit_cash = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": r['id'] for _, r in df_riw_all.iterrows()}
                 pilih_edit_cash = st.selectbox("Pilih transaksi untuk diedit:", list(opsi_edit_cash.keys()), key="sel_edit_cash")
                 id_edit_cash = opsi_edit_cash[pilih_edit_cash]
-                detail_cash = df_riw_all[df_riw_all['id'] == id_edit_cash].iloc[0]
+               detail_cash = df_riw_all[df_riw_all['id'] == id_edit_cash].iloc[0]
+
+# --- PERBAIKAN MULAI DI SINI ---
+produk_id_edit = int(detail_cash['produk_id'])
+row_modal = c.execute("SELECT harga_modal FROM produk WHERE id=?", (produk_id_edit,)).fetchone()
+
+if row_modal is None:
+    st.error("❌ Data produk untuk transaksi ini tidak ditemukan di database.")
+    st.stop()
+
+modal_asli = row_modal[0]
+# --- PERBAIKAN SELESAI ---
+
+with st.form("form_edit_cash"):
                 
-                modal_asli = c.execute("SELECT harga_modal FROM produk WHERE id=?", (detail_cash['produk_id'],)).fetchone()[0]
                 
-                with st.form("form_edit_cash"):
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         new_hj = st.number_input("Harga Jual Satuan Baru (Rp)", value=float(detail_cash['harga_jual_satuan']), step=1000.0)
@@ -984,7 +995,7 @@ elif pilihan == "🛒 Jual Cash":
                                 if new_uang < new_total:
                                     st.error("❌ Uang diterima kurang dari total belanja baru!")
                                 else:
-                                    c.execute("UPDATE produk SET stok = stok - ? WHERE id = ?", (selisih_qty, detail_cash['produk_id']))
+                                    c.execute("UPDATE produk SET stok = stok - ? WHERE id = ?", (selisih_qty, produk_id_edit))
                                     c.execute("""UPDATE transaksi_cash SET harga_jual_satuan=?, jumlah=?, total_harga=?, uang_bayar=?, kembalian=?, laba=? WHERE id=?""",
                                               (new_hj, new_qty_cash, new_total, new_uang, new_kembalian, new_profit, id_edit_cash))
                                     conn.commit()
