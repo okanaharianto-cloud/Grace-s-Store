@@ -1859,6 +1859,7 @@ elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
+# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional - PDF 1 & PDF 2 satu template</p></div>', unsafe_allow_html=True)
 
@@ -1976,115 +1977,115 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         for r in sched_1
     ])
 
-    # ====== CSS BERSAMA DENGAN OPTIMASI 1 HALAMAN A4 ======
+    # ====== CSS BERSAMA (OPTIMASI 1 HALAMAN A4) ======
     shared_css = """
     :root { --primary:#1e3a8a; --primary-light:#eff6ff; --accent:#d97706; --accent-light:#fffbeb; --success:#059669; --success-light:#ecfdf5; --danger:#dc2626; --danger-light:#fef2f2; --text-main:#1f2937; --text-muted:#6b7280; --border:#e5e7eb; }
     * { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     
     /* Setup Kertas A4 */
     @page { size: A4; margin: 10mm; }
-    body { font-family:'Inter','Segoe UI',Helvetica,Arial,sans-serif; background:#f3f4f6; padding:20px 10px; color:var(--text-main); font-size:12px; line-height:1.4; }
+    body { font-family:'Inter','Segoe UI',Helvetica,Arial,sans-serif; background:#f3f4f6; padding:10px; color:var(--text-main); font-size:11px; line-height:1.3; }
     
     /* Container Halaman */
-    .page { max-width:210mm; min-height:297mm; margin:0 auto 30px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1); page-break-after: always; display:flex; flex-direction:column; position:relative; }
+    .page { max-width:210mm; min-height:297mm; margin:0 auto 20px auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1); page-break-after: always; display:flex; flex-direction:column; position:relative; }
     .page:last-child { page-break-after: auto; }
     
-    .btn-print-wrap { position:sticky; top:0; z-index:9999; background:rgba(243,244,246,0.95); padding:12px 0; text-align:center; border-bottom:1px solid var(--border); margin-bottom:20px; }
-    .btn-print { background:linear-gradient(135deg,#2563eb,#1e40af); color:white; border:none; padding:10px 24px; font-size:14px; border-radius:50px; cursor:pointer; font-weight:600; width:100%; max-width:350px; box-shadow:0 4px 12px rgba(37,99,235,0.3); }
+    .btn-print-wrap { position:sticky; top:0; z-index:9999; background:rgba(243,244,246,0.95); padding:10px 0; text-align:center; border-bottom:1px solid var(--border); margin-bottom:20px; }
+    .btn-print { background:linear-gradient(135deg,#2563eb,#1e40af); color:white; border:none; padding:10px 24px; font-size:13px; border-radius:50px; cursor:pointer; font-weight:600; width:100%; max-width:350px; box-shadow:0 4px 12px rgba(37,99,235,0.3); }
     
     /* Header */
-    .hdr { background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%); color:#fff; padding:15px 20px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; }
+    .hdr { background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%); color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; }
     .brand { position:relative; z-index:1; max-width:70%; }
-    .brand h1 { font-size:20px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px; }
-    .brand .tag { font-size:10px; color:#93c5fd; font-weight:500; letter-spacing:0.5px; margin-bottom:4px; }
-    .brand .addr { font-size:9px; color:#cbd5e1; line-height:1.4; }
-    .title-box { text-align:right; position:relative; z-index:1; margin-top:5px; }
-    .badge-inv { display:inline-block; background:rgba(217,119,6,0.2); color:#fcd34d; padding:3px 10px; border-radius:4px; font-size:9px; font-weight:700; letter-spacing:1px; text-transform:uppercase; border:1px solid rgba(217,119,6,0.4); margin-bottom:5px; }
-    .inv-no { font-size:14px; font-weight:700; font-family:monospace; letter-spacing:1px; }
-    .inv-date { font-size:10px; color:#94a3b8; margin-top:2px; }
+    .brand h1 { font-size:18px; font-weight:800; letter-spacing:0.5px; margin-bottom:2px; }
+    .brand .tag { font-size:9px; color:#93c5fd; font-weight:500; letter-spacing:0.5px; margin-bottom:3px; }
+    .brand .addr { font-size:8.5px; color:#cbd5e1; line-height:1.3; }
+    .title-box { text-align:right; position:relative; z-index:1; margin-top:4px; }
+    .badge-inv { display:inline-block; background:rgba(217,119,6,0.2); color:#fcd34d; padding:2px 8px; border-radius:4px; font-size:8.5px; font-weight:700; letter-spacing:1px; text-transform:uppercase; border:1px solid rgba(217,119,6,0.4); margin-bottom:4px; }
+    .inv-no { font-size:12px; font-weight:700; font-family:monospace; letter-spacing:1px; }
+    .inv-date { font-size:9px; color:#94a3b8; margin-top:1px; }
     
     /* Body Content */
-    .meta { display:flex; gap:15px; justify-content:space-between; padding:8px 20px; background:#f8fafc; border-bottom:1px solid var(--border); font-size:10px; color:var(--text-muted); flex-wrap:wrap; }
+    .meta { display:flex; gap:10px; justify-content:space-between; padding:6px 16px; background:#f8fafc; border-bottom:1px solid var(--border); font-size:9.5px; color:var(--text-muted); flex-wrap:wrap; }
     .meta b { color:var(--text-main); }
-    .body { padding:15px 20px; flex:1; }
+    .body { padding:12px 16px; flex:1; }
     
-    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
-    .card { border:1px solid var(--border); border-radius:6px; padding:10px 12px; background:#fff; }
-    .card-title { font-size:9.5px; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
-    .kv-row { display:flex; margin-bottom:4px; font-size:10.5px; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+    .card { border:1px solid var(--border); border-radius:6px; padding:8px 10px; background:#fff; }
+    .card-title { font-size:9px; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
+    .kv-row { display:flex; margin-bottom:3px; font-size:10px; }
     .kv-row:last-child { margin-bottom:0; }
-    .kv-row .k { width:55px; color:var(--text-muted); }
+    .kv-row .k { width:50px; color:var(--text-muted); }
     .kv-row .v { flex:1; font-weight:600; color:var(--text-main); }
     
-    .summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
-    .sum-card { border-radius:6px; padding:10px 12px; border:1px solid; }
-    .sum-card .lbl { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:2px; }
-    .sum-card .val { font-size:16px; font-weight:800; }
+    .summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+    .sum-card { border-radius:6px; padding:8px 10px; border:1px solid; }
+    .sum-card .lbl { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:2px; }
+    .sum-card .val { font-size:14px; font-weight:800; }
     .sum-card.green { background:var(--success-light); border-color:#a7f3d0; color:var(--success); }
     .sum-card.amber { background:var(--accent-light); border-color:#fde68a; color:var(--accent); }
     
-    .tenor-options { display:grid; grid-template-columns:1fr; gap:10px; margin-bottom:12px; }
-    .tenor-card { border:1.5px solid var(--border); border-radius:6px; padding:10px 12px; background:#fff; }
+    .tenor-options { display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:10px; }
+    .tenor-card { border:1.5px solid var(--border); border-radius:6px; padding:8px 10px; background:#fff; }
     .tenor-card.recommended { border-color:var(--primary); background:var(--primary-light); }
     .tc-label { font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:2px; }
-    .tc-title { font-size:12px; font-weight:700; margin-bottom:4px; color:var(--text-main); }
-    .tc-row { display:flex; justify-content:space-between; font-size:10.5px; padding:2px 0; }
+    .tc-title { font-size:11px; font-weight:700; margin-bottom:4px; color:var(--text-main); }
+    .tc-row { display:flex; justify-content:space-between; font-size:10px; padding:2px 0; }
     .tc-row.main { border-top:1px dashed var(--border); margin-top:4px; padding-top:4px; font-weight:700; color:var(--primary); }
     
     /* Tabel Jadwal */
-    .sched-wrap { display:grid; gap:12px; margin-bottom:12px; }
+    .sched-wrap { display:grid; gap:10px; margin-bottom:10px; }
     .sched { border:1px solid var(--border); border-radius:6px; overflow:hidden; }
-    .sched-h { background:var(--primary); color:#fff; padding:6px 10px; font-size:10px; font-weight:700; letter-spacing:0.5px; }
-    table { width:100%; border-collapse:collapse; font-size:9.5px; }
-    th { background:#f8fafc; padding:4px 6px; text-align:left; font-weight:700; color:var(--text-muted); font-size:9px; border-bottom:1px solid var(--border); }
-    td { padding:4px 6px; border-bottom:1px solid #f1f5f9; }
+    .sched-h { background:var(--primary); color:#fff; padding:5px 10px; font-size:9.5px; font-weight:700; letter-spacing:0.5px; }
+    table { width:100%; border-collapse:collapse; font-size:9px; }
+    th { background:#f8fafc; padding:3px 6px; text-align:left; font-weight:700; color:var(--text-muted); font-size:8.5px; border-bottom:1px solid var(--border); }
+    td { padding:3px 6px; border-bottom:1px solid #f1f5f9; }
     .r { text-align:right; } .c { text-align:center; }
-    .status-lunas { background:#d1fae5; color:#065f46; padding:1px 4px; border-radius:3px; font-size:8px; font-weight:700; }
-    .status-pending { background:#fef3c7; color:#92400e; padding:1px 4px; border-radius:3px; font-size:8px; font-weight:700; }
+    .status-lunas { background:#d1fae5; color:#065f46; padding:1px 4px; border-radius:3px; font-size:7.5px; font-weight:700; }
+    .status-pending { background:#fef3c7; color:#92400e; padding:1px 4px; border-radius:3px; font-size:7.5px; font-weight:700; }
     
-    .note-text { font-size:9.5px; color:var(--text-muted); padding:8px 10px; background:#f9fafb; border-left:3px solid var(--accent); border-radius:4px; margin-bottom:12px; line-height:1.4; }
+    .note-text { font-size:9px; color:var(--text-muted); padding:6px 10px; background:#f9fafb; border-left:3px solid var(--accent); border-radius:4px; margin-bottom:10px; line-height:1.3; }
     
     /* Bank Box Rata Tengah */
-    .bank-box { border:1px dashed var(--primary); background:var(--primary-light); padding:10px 12px; border-radius:6px; margin-bottom:12px; text-align:center; }
-    .bank-box .title { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--primary); margin-bottom:4px; }
-    .bank-box .acc { font-size:16px; font-weight:800; font-family:monospace; color:var(--primary); letter-spacing:1px; }
-    .bank-box .name { font-size:10px; color:var(--text-muted); margin-top:2px; }
+    .bank-box { border:1px dashed var(--primary); background:var(--primary-light); padding:8px 10px; border-radius:6px; margin-bottom:10px; text-align:center; }
+    .bank-box .title { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--primary); margin-bottom:3px; }
+    .bank-box .acc { font-size:14px; font-weight:800; font-family:monospace; color:var(--primary); letter-spacing:1px; }
+    .bank-box .name { font-size:9px; color:var(--text-muted); margin-top:1px; }
     
-    .info-box { background:var(--danger-light); border:1px solid #fecaca; border-radius:6px; padding:10px 12px; font-size:9.5px; color:#7f1d1d; line-height:1.4; }
+    .info-box { background:var(--danger-light); border:1px solid #fecaca; border-radius:6px; padding:8px 10px; font-size:9px; color:#7f1d1d; line-height:1.3; }
     
     /* CSS KHUSUS PERJANJIAN LEGAL */
-    .legal-doc { font-family: 'Times New Roman', Times, serif; font-size: 11px; color: #000; }
-    .legal-doc p { margin-bottom: 6px; text-align: justify; line-height: 1.4; }
-    .doc-title { text-align:center; border-bottom:2px solid #000; padding-bottom:6px; margin-bottom:12px; }
-    .doc-title h2 { font-size:14px; font-weight:800; text-decoration: underline; letter-spacing:0.5px; margin-bottom:2px; color: #000; }
-    .doc-number { font-size:11px; color: #000; font-family: 'Times New Roman', Times, serif; }
+    .legal-doc { font-family: 'Times New Roman', Times, serif; font-size: 10.5px; color: #000; }
+    .legal-doc p { margin-bottom: 5px; text-align: justify; line-height: 1.3; }
+    .doc-title { text-align:center; border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:10px; }
+    .doc-title h2 { font-size:13px; font-weight:800; text-decoration: underline; letter-spacing:0.5px; margin-bottom:2px; color: #000; }
+    .doc-number { font-size:10px; color: #000; font-family: 'Times New Roman', Times, serif; }
     
-    .party-table { width: 100%; margin-bottom: 12px; border-collapse: collapse; }
+    .party-table { width: 100%; margin-bottom: 10px; border-collapse: collapse; }
     .party-table td { vertical-align: top; padding: 2px 0; border: none; }
-    .party-table .label { width: 110px; font-weight: bold; }
+    .party-table .label { width: 100px; font-weight: bold; }
     .party-table .colon { width: 10px; font-weight: bold; }
-    .party-table .content { text-align: justify; line-height: 1.4; }
+    .party-table .content { text-align: justify; line-height: 1.3; }
 
-    .pasal-title { text-align:center; font-weight:bold; margin: 12px 0 6px 0; font-size:11px; text-transform: uppercase; }
-    .pasal-list { padding-left:20px; font-size:11px; line-height:1.4; margin-bottom: 8px; }
-    .pasal-list li { margin-bottom:4px; text-align: justify; }
+    .pasal-title { text-align:center; font-weight:bold; margin: 10px 0 4px 0; font-size:10.5px; text-transform: uppercase; }
+    .pasal-list { padding-left:20px; font-size:10.5px; line-height:1.3; margin-bottom: 6px; }
+    .pasal-list li { margin-bottom:3px; text-align: justify; }
 
-    .signature-area { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:20px; padding-top:12px; border-top:1px solid #ccc; }
+    .signature-area { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:15px; padding-top:10px; border-top:1px solid #ccc; }
     .sig-box { text-align:center; }
-    .sig-title { font-size:11px; font-weight:bold; margin-bottom:6px; }
+    .sig-title { font-size:10.5px; font-weight:bold; margin-bottom:4px; }
     
-    /* E-Sign & Materai */
-    .e-sign-box { border: 1.5px solid var(--success); background:#f0fdf4; border-radius:6px; padding:8px; margin:6px auto; width: 90%; text-align:center; }
-    .e-sign-header { font-size:9px; font-weight:bold; color:var(--success); display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:4px; font-family: 'Inter', sans-serif; }
-    .e-sign-name { font-size:12px; font-weight:bold; color:#000; margin-bottom:2px; font-family: 'Inter', sans-serif; }
-    .e-sign-text { font-size:8px; color:#555; line-height:1.2; font-family: 'Inter', sans-serif; margin-bottom: 4px; }
-    .barcode-svg { width: 80%; height: 25px; margin: 0 auto; background: repeating-linear-gradient(to right, #000 0, #000 2px, transparent 2px, transparent 4px, #000 4px, #000 5px, transparent 5px, transparent 8px, #000 8px, #000 11px, transparent 11px, transparent 12px); }
+    /* E-Sign & Materai (Dikompres agar tidak terpotong) */
+    .e-sign-box { border: 1.5px solid var(--success); background:#f0fdf4; border-radius:6px; padding:6px; margin:4px auto; width: 90%; text-align:center; }
+    .e-sign-header { font-size:8px; font-weight:bold; color:var(--success); display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:2px; font-family: 'Inter', sans-serif; }
+    .e-sign-name { font-size:11px; font-weight:bold; color:#000; margin-bottom:1px; font-family: 'Inter', sans-serif; }
+    .e-sign-text { font-size:7.5px; color:#555; line-height:1.1; font-family: 'Inter', sans-serif; margin-bottom: 2px; }
+    .barcode-svg { width: 80%; height: 20px; margin: 0 auto; background: repeating-linear-gradient(to right, #000 0, #000 2px, transparent 2px, transparent 4px, #000 4px, #000 5px, transparent 5px, transparent 8px, #000 8px, #000 11px, transparent 11px, transparent 12px); }
     
-    .materai-box { border: 1.5px dashed #999; background:#f9f9f9; border-radius:6px; padding:15px 8px; margin:6px auto; width: 90%; font-size:10px; color: #555; font-weight: bold; display:flex; align-items:center; justify-content:center; height: 70px; }
-    .sig-name { font-size:11px; font-weight:bold; color:#000; margin-top:6px; text-decoration: underline; }
-    .sig-role { font-size:10px; color:#000; margin-top:2px; }
+    .materai-box { border: 1.5px dashed #999; background:#f9f9f9; border-radius:6px; padding:10px 6px; margin:4px auto; width: 90%; font-size:9px; color: #555; font-weight: bold; display:flex; align-items:center; justify-content:center; height: 60px; }
+    .sig-name { font-size:10.5px; font-weight:bold; color:#000; margin-top:4px; text-decoration: underline; }
+    .sig-role { font-size:9.5px; color:#000; margin-top:1px; }
 
-    .footer { background:#f8fafc; padding:8px 20px; text-align:center; font-size:8.5px; color:var(--text-muted); border-top:1px solid var(--border); font-family:'Inter', sans-serif; margin-top: auto; }
+    .footer { background:#f8fafc; padding:6px 16px; text-align:center; font-size:8px; color:var(--text-muted); border-top:1px solid var(--border); font-family:'Inter', sans-serif; margin-top: auto; }
     
     /* PENGATURAN KHUSUS SAAT DI-PRINT AGAR PAS 1 HALAMAN */
     @media print { 
@@ -2122,7 +2123,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     <div class="card-title">👤 Penerima / Customer</div>
                     <div class="kv-row"><div class="k">Nama</div><div class="v">{d['cn']}</div></div>
                     <div class="kv-row"><div class="k">Telepon</div><div class="v">{d['telepon']}</div></div>
-                    <div class="kv-row"><div class="k">Alamat</div><div class="v" style="font-weight:400;font-size:10px;">{d['alamat']}</div></div>
+                    <div class="kv-row"><div class="k">Alamat</div><div class="v" style="font-weight:400;font-size:9.5px;">{d['alamat']}</div></div>
                 </div>
                 <div class="card">
                     <div class="card-title">📱 Detail Produk</div>
@@ -2165,7 +2166,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
         </div>
         <footer class="footer">
-            <div style="font-weight:700;color:var(--primary);margin-bottom:2px;">GRACE'S ELECTRONIC</div>
+            <div style="font-weight:700;color:var(--primary);margin-bottom:1px;">GRACE'S ELECTRONIC</div>
             <div>Bukti sah akad kredit. Mengikat setelah ditandatangani kedua pihak.</div>
         </footer>
     </div>
@@ -2229,7 +2230,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div class="pasal-title">PASAL 3<br>DENDA DAN WANPRESTASI</div>
             <ol class="pasal-list">
                 <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari jumlah angsuran yang tertunggak.</li>
-                <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
+                <li>Pihak Kedua dinyatakan wanprestasi apabila <b>gagal</b> membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
                 <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke <b>Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking</b>, yang mengakibatkan Debitur masuk dalam daftar hitam (<i>blacklist</i>) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
             </ol>
 
@@ -2270,7 +2271,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
         </div>
         <footer class="footer">
-            <div style="font-weight:700;color:var(--primary);margin-bottom:2px;">GRACE'S ELECTRONIC</div>
+            <div style="font-weight:700;color:var(--primary);margin-bottom:1px;">GRACE'S ELECTRONIC</div>
             <div>Dokumen ini sah dan mengikat secara hukum.</div>
         </footer>
     </div>
@@ -2310,7 +2311,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             use_container_width=True
         )
 
-    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
+    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
 # ==================== 11. OVERDUE & DENDA ====================
 elif pilihan == "🚨 Overdue & Denda":
     st.markdown('<div class="main-header"><h1>🚨 Overdue & Denda</h1></div>', unsafe_allow_html=True)
