@@ -1046,7 +1046,7 @@ elif pilihan == "📤 Kredit Baru":
 
             st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
             
-                        col_dp, col_tenor, col_bunga = st.columns(3)
+            col_dp, col_tenor, col_bunga = st.columns(3)
             with col_dp:
                 # Mengubah min_value menjadi 0.0 agar bisa diketik manual berapapun
                 dp_persen = st.number_input("DP (%)", min_value=0.0, max_value=100.0, value=float(dp_min_persen_default), step=1.0, help=f"Minimal DP dari Owner adalah {dp_min_persen_default}%")
@@ -1056,7 +1056,6 @@ elif pilihan == "📤 Kredit Baru":
                 tenor = st.selectbox("Tenor (Bulan)", tenor_list, index=min(3, len(tenor_list)-1))
             with col_bunga:
                 bunga_flat = st.number_input("Bunga Flat / 6 Bln (%)", min_value=0.0, value=float(bunga_flat_default), step=1.0, help="Bisa diubah manual jika ada nego bunga")
-
             dp = round(h_cash * dp_persen / 100, -2)
             rate = (bunga_flat / 100) / 6
             bunga_total = rate * tenor
