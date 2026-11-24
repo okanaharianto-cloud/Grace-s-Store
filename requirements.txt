@@ -30,3 +30,4 @@ pillow
 pdfplumber
 python-docx
 pytesseract
+cryptography
