@@ -1855,6 +1855,7 @@ elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
+# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional - PDF 1 & PDF 2 satu template</p></div>', unsafe_allow_html=True)
 
@@ -2021,27 +2022,40 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .bank-box .acc { font-size:15px; font-weight:800; font-family:monospace; color:var(--primary); }
     .bank-box .name { font-size:11px; color:var(--text-muted); }
     .info-box { background:var(--danger-light); border:1px solid #fecaca; border-radius:8px; padding:12px 16px; font-size:10.5px; color:#7f1d1d; line-height:1.6; }
-    .agreement-container { padding:4px 0; }
-    .doc-title { text-align:center; border-bottom:2px solid var(--primary); padding-bottom:12px; margin-bottom:16px; }
-    .doc-title h2 { font-size:15px; font-weight:800; color:var(--primary); letter-spacing:1px; margin-bottom:4px; }
-    .doc-number { font-size:11px; color:var(--text-muted); font-family:monospace; }
-    .pasal-title { background:var(--primary-light); color:var(--primary); padding:8px 14px; border-radius:6px; font-size:11px; font-weight:800; text-align:center; margin:16px 0 10px 0; letter-spacing:1px; text-transform:uppercase; border-left:4px solid var(--primary); }
-    .pasal-list { padding-left:20px; font-size:11px; line-height:1.7; }
-    .pasal-list li { margin-bottom:6px; }
-    .agreement-container p { font-size:11px; line-height:1.7; margin-bottom:8px; text-align:justify; }
-    .signature-area { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:32px; padding-top:24px; border-top:1px dashed var(--border); }
+    
+    /* CSS KHUSUS PERJANJIAN LEGAL */
+    .legal-doc { font-family: 'Times New Roman', Times, serif; font-size: 12px; color: #000; }
+    .legal-doc p { margin-bottom: 10px; text-align: justify; line-height: 1.6; }
+    .doc-title { text-align:center; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:20px; }
+    .doc-title h2 { font-size:16px; font-weight:800; text-decoration: underline; letter-spacing:1px; margin-bottom:4px; color: #000; }
+    .doc-number { font-size:12px; color: #000; font-family: 'Times New Roman', Times, serif; }
+    
+    .party-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
+    .party-table td { vertical-align: top; padding: 4px 0; border: none; }
+    .party-table .label { width: 130px; font-weight: bold; }
+    .party-table .colon { width: 10px; font-weight: bold; }
+    .party-table .content { text-align: justify; line-height: 1.6; }
+
+    .pasal-title { text-align:center; font-weight:bold; margin: 20px 0 10px 0; font-size:12px; text-transform: uppercase; }
+    .pasal-list { padding-left:25px; font-size:12px; line-height:1.6; margin-bottom: 15px; }
+    .pasal-list li { margin-bottom:8px; text-align: justify; }
+
+    .signature-area { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:40px; padding-top:20px; border-top:1px solid #ccc; }
     .sig-box { text-align:center; }
-    .sig-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:10px; }
-    .sig-name { font-size:12px; font-weight:800; color:var(--text-main); margin-top:14px; }
-    .sig-role { font-size:10px; color:var(--text-muted); margin-top:2px; }
-    .cert-sig-box { border:1.5px solid var(--success); background:var(--success-light); border-radius:8px; padding:10px; margin:12px 0; }
-    .cert-sig-header { font-size:8.5px; font-weight:800; color:var(--success); letter-spacing:1px; margin-bottom:6px; display:flex; align-items:center; justify-content:center; gap:4px; }
-    .cert-sig-name { font-size:11px; font-weight:800; color:var(--text-main); margin-bottom:4px; }
-    .cert-sig-text { font-size:8.5px; color:var(--text-muted); line-height:1.4; }
-    .cert-sig-barcode { margin-top:8px; display:flex; justify-content:center; }
-    .ematerai-box { border:2px dashed var(--accent); background:var(--accent-light); border-radius:8px; padding:24px 10px; margin:12px 0; font-size:10px; color:var(--accent); font-weight:700; letter-spacing:0.5px; }
-    .ematerai-box::before { content:'🔖'; display:block; font-size:20px; margin-bottom:6px; }
-    .footer { background:#f8fafc; padding:12px 24px; text-align:center; font-size:9.5px; color:var(--text-muted); border-top:1px solid var(--border); }
+    .sig-title { font-size:12px; font-weight:bold; margin-bottom:10px; }
+    
+    /* Kotak E-Signature Tersertifikasi */
+    .e-sign-box { border: 2px solid var(--success); background:#f0fdf4; border-radius:8px; padding:12px; margin:10px auto; width: 85%; text-align:center; }
+    .e-sign-header { font-size:10px; font-weight:bold; color:var(--success); display:flex; align-items:center; justify-content:center; gap:5px; margin-bottom:8px; font-family: 'Inter', sans-serif; }
+    .e-sign-name { font-size:14px; font-weight:bold; color:#000; margin-bottom:4px; font-family: 'Inter', sans-serif; }
+    .e-sign-text { font-size:9px; color:#555; line-height:1.3; font-family: 'Inter', sans-serif; margin-bottom: 8px; }
+    .barcode-svg { width: 80%; height: 35px; margin: 0 auto; background: repeating-linear-gradient(to right, #000 0, #000 2px, transparent 2px, transparent 4px, #000 4px, #000 5px, transparent 5px, transparent 8px, #000 8px, #000 11px, transparent 11px, transparent 12px); }
+    
+    .materai-box { border: 2px dashed #999; background:#f9f9f9; border-radius:8px; padding: 25px 10px; margin:10px auto; width: 85%; font-size:11px; color: #555; font-weight: bold; display:flex; align-items:center; justify-content:center; height: 90px; }
+    .sig-name { font-size:12px; font-weight:bold; color:#000; margin-top:10px; text-decoration: underline; }
+    .sig-role { font-size:11px; color:#000; margin-top:2px; }
+
+    .footer { background:#f8fafc; padding:12px 24px; text-align:center; font-size:9.5px; color:var(--text-muted); border-top:1px solid var(--border); font-family:'Inter', sans-serif; }
     @media print { body { background:#fff; padding:0; } .page { box-shadow:none; border-radius:0; margin:0; } .btn-print-wrap { display:none; } .page + .page { page-break-before:always; } }
     """
 
@@ -2119,7 +2133,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     </div>
     """
 
-    # ====== HALAMAN 2: PERJANJIAN (PDF 2) - KOP SAMA DENGAN INVOICE ======
+    # ====== HALAMAN 2: PERJANJIAN (FORMAT LEGAL) ======
     html_page2 = f"""
     <div class="page">
         <header class="hdr">
@@ -2139,76 +2153,82 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div>Nomor: <b>GRC-INV-{kid}/PERJ/2026</b></div>
             <div>Tenor: <b>{tenor_asli} Bulan</b></div>
         </div>
-        <div class="body">
-            <div class="agreement-container">
-                <div class="doc-title">
-                    <h2>PERJANJIAN PEMBIAYAAN KONSUMEN</h2>
-                    <div class="doc-number">Nomor: GRC-INV-{kid}/PERJ/2026</div>
-                </div>
+        <div class="body legal-doc">
+            <div class="doc-title">
+                <h2>SURAT PERJANJIAN PEMBIAYAAN KONSUMEN</h2>
+                <div class="doc-number">Nomor: GRC-INV-{kid}/PERJ/2026</div>
+            </div>
 
-                <!-- Tanggal dinamis dari form input -->
-                <p>Pada hari ini, <b>{tgl_cetak_str}</b>, yang bertanda tangan di bawah ini:</p>
+            <p>Pada hari ini, <b>{tgl_cetak_str}</b>, yang bertanda tangan di bawah ini:</p>
 
-                <div class="card" style="margin-bottom:10px;">
-                    <div class="card-title">🏢 PIHAK PERTAMA (KREDITUR)</div>
-                    <p style="margin:0;"><b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</p>
-                </div>
+            <table class="party-table">
+                <tr>
+                    <td class="label">PIHAK PERTAMA</td>
+                    <td class="colon">:</td>
+                    <td class="content"><b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</td>
+                </tr>
+                <tr>
+                    <td class="label">PIHAK KEDUA</td>
+                    <td class="colon">:</td>
+                    <td class="content"><b>{d['cn'].upper()}</b>, lahir di {tgl_lahir_cust}, Warga Negara Indonesia, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: <b>{nik_cust}</b>.</td>
+                </tr>
+            </table>
 
-                <div class="card" style="margin-bottom:10px;">
-                    <div class="card-title">👤 PIHAK KEDUA (DEBITUR)</div>
-                    <p style="margin:0;"><b>{d['cn'].upper()}</b>, lahir di {tgl_lahir_cust}, WNI, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang KTP dengan NIK: <b>{nik_cust}</b>.</p>
-                </div>
+            <p>Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan dan syarat-syarat sebagai berikut:</p>
 
-                <p>Kedua belah pihak sepakat mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan:</p>
+            <div class="pasal-title">PASAL 1<br>OBJEK PERJANJIAN</div>
+            <p>Pihak Pertama setuju untuk membiayai pembelian barang berupa <b>{d['pn']}</b> (SKU: GRC-{d['produk_id']}) kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
 
-                <div class="pasal-title">Pasal 1 — Objek Perjanjian</div>
-                <p>Pihak Pertama setuju membiayai pembelian barang berupa <b>{d['pn']}</b> kepada Pihak Kedua, dan Pihak Kedua setuju membeli barang tersebut secara angsuran sesuai ketentuan dalam perjanjian ini.</p>
+            <div class="pasal-title">PASAL 2<br>KETENTUAN PEMBAYARAN</div>
+            <ol class="pasal-list">
+                <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar <b>{format_rp(m_dp)}</b>.</li>
+                <li>Jangka waktu pembiayaan adalah <b>{tenor_asli} (bulan)</b>, dengan angsuran bulanan sebesar <b>{format_rp(m_cicilan)}</b>.</li>
+                <li>Angsuran pertama wajib dibayarkan pada tanggal <b>{sched_1[0]['jatuh_tempo']}</b> dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan angsuran terakhir.</li>
+                <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: <b>Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT</b>.</li>
+                <li>Pihak Kedua dikenakan <b>Biaya Administrasi berupa bea materai sebesar Rp 10.000</b> yang posisinya <b>BERADA DI LUAR nominal angsuran</b>. Biaya tersebut akan ditagihkan dan dibayarkan bersamaan dengan setoran angsuran terakhir. Dengan demikian, total pembayaran pada bulan ke-{tenor_asli} adalah sebesar <b>{format_rp(cicilan_terakhir)}</b>.</li>
+            </ol>
 
-                <div class="pasal-title">Pasal 2 — Ketentuan Pembayaran</div>
-                <ol class="pasal-list">
-                    <li>Uang Muka (DP) yang telah dibayarkan Pihak Kedua sebesar <b>{format_rp(m_dp)}</b>.</li>
-                    <li>Jangka waktu pembiayaan <b>{tenor_asli} (bulan)</b>, dengan angsuran bulanan <b>{format_rp(m_cicilan)}</b>.</li>
-                    <!-- Tanggal jatuh tempo diambil dari tabel yang sudah diedit kasir -->
-                    <li>Angsuran pertama wajib dibayar tanggal <b>{sched_1[0]['jatuh_tempo']}</b> dan selanjutnya paling lambat tanggal yang sama setiap bulan.</li>
-                    <li>Pembayaran dilakukan tunai di toko atau transfer ke rekening resmi: <b>Bank Mandiri No. Rek. 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT</b>.</li>
-                    <li>Pihak Kedua dikenakan <b>Biaya Administrasi (bea materai) Rp 10.000</b> di luar nominal angsuran, ditagih bersamaan angsuran terakhir. Total bulan ke-{tenor_asli}: <b>{format_rp(cicilan_terakhir)}</b>.</li>
-                </ol>
+            <div class="pasal-title">PASAL 3<br>DENDA DAN WANPRESTASI</div>
+            <ol class="pasal-list">
+                <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari jumlah angsuran yang tertunggak.</li>
+                <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
+                <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke <b>Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking</b>, yang mengakibatkan Debitur masuk dalam daftar hitam (<i>blacklist</i>) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
+            </ol>
 
-                <div class="pasal-title">Pasal 3 — Denda dan Wanprestasi</div>
-                <ol class="pasal-list">
-                    <li>Keterlambatan pembayaran dikenakan denda <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari angsuran tertunggak.</li>
-                    <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran 2 (dua) bulan berturut-turut.</li>
-                    <li>Apabila Debitur mangkir, Kreditur berhak melaporkan ke <b>SLIK OJK</b> dan/atau <b>BI Checking</b> yang mengakibatkan Debitur masuk daftar hitam (blacklist).</li>
-                </ol>
+            <div class="pasal-title">PASAL 4<br>PENYELESAIAN SENGKETA DAN DOMISILI</div>
+            <ol class="pasal-list">
+                <li>Segala perselisihan yang timbul dari perjanjian ini akan diselesaikan secara musyawarah mufakat oleh Para Pihak.</li>
+                <li>Apabila musyawarah tidak mencapai kesepakatan, Para Pihak sepakat untuk menyelesaikannya melalui <b>Lembaga Alternatif Penyelesaian Sengketa Sektor Jasa Keuangan (LAPS SJK)</b> atau <b>Pengadilan Negeri Kutai Barat</b>.</li>
+                <li>Kreditur dilarang melakukan penarikan objek pembiayaan secara paksa tanpa prosedur hukum yang sah sesuai dengan POJK Nomor 22 Tahun 2023 dan Putusan Mahkamah Konstitusi Nomor 18/PUU-XVII/2019.</li>
+                <li>Para pihak memilih domisili hukum yang umum dan tetap di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
+            </ol>
 
-                <div class="pasal-title">Pasal 4 — Penyelesaian Sengketa &amp; Domisili</div>
-                <ol class="pasal-list">
-                    <li>Perselisihan diselesaikan secara musyawarah mufakat.</li>
-                    <li>Apabila gagal, diselesaikan melalui <b>LAPS SJK</b> atau <b>Pengadilan Negeri Kutai Barat</b>.</li>
-                    <li>Kreditur dilarang menarik objek pembiayaan secara paksa tanpa prosedur hukum sesuai POJK No. 22 Tahun 2023 dan Putusan MK No. 18/PUU-XVII/2019.</li>
-                    <li>Para pihak memilih domisili hukum di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
-                </ol>
+            <div class="pasal-title">PASAL 5<br>KETENTUAN PENUTUP</div>
+            <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
 
-                <div class="pasal-title">Pasal 5 — Ketentuan Penutup</div>
-                <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Dibuat rangkap 2 (dua), masing-masing berkekuatan hukum sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
-
-                <div class="signature-area">
-                    <div class="sig-box">
-                        <div class="sig-title">Pihak Pertama (Kreditur)</div>
-                        <div class="cert-sig-box">
-                            <div class="cert-sig-header">🛡️ TERSERTIFIKASI</div>
-                            <div class="cert-sig-name">ADI HARIANTO, S.E.</div>
-                            <div class="cert-sig-text">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
+            <div class="signature-area">
+                <div class="sig-box">
+                    <div class="sig-title">PIHAK PERTAMA (KREDITUR)</div>
+                    
+                    <!-- Blok E-Signature Tersertifikasi -->
+                    <div class="e-sign-box">
+                        <div class="e-sign-header">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                            TERVERIFIKASI ELEKTRONIK
                         </div>
-                        <div class="sig-name">ADI HARIANTO, S.E.</div>
-                        <div class="sig-role">Direktur CV. Grace Haven Transport</div>
+                        <div class="e-sign-name">ADI HARIANTO, S.E.</div>
+                        <div class="e-sign-text">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
+                        <div class="barcode-svg"></div>
                     </div>
-                    <div class="sig-box">
-                        <div class="sig-title">Pihak Kedua (Debitur)</div>
-                        <div class="ematerai-box">Tempel e-Meterai / TTD Basah</div>
-                        <div class="sig-name">{d['cn'].upper()}</div>
-                        <div class="sig-role">Pemegang KTP NIK: {nik_cust}</div>
-                    </div>
+
+                    <div class="sig-name">ADI HARIANTO, S.E.</div>
+                    <div class="sig-role">Direktur CV. Grace Haven Transport</div>
+                </div>
+                <div class="sig-box">
+                    <div class="sig-title">PIHAK KEDUA (DEBITUR)</div>
+                    <div class="materai-box">Materai 10.000</div>
+                    <div class="sig-name">{d['cn'].upper()}</div>
+                    <div class="sig-role">Pemegang KTP NIK: {nik_cust}</div>
                 </div>
             </div>
         </div>
@@ -2253,9 +2273,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             use_container_width=True
         )
 
-    with col_dl2:
-        # (Kode generate_word ke bawah biarkan sama seperti sebelumnya)
-        pass 
+    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
 # ==================== 11. OVERDUE & DENDA ====================
 elif pilihan == "🚨 Overdue & Denda":
     st.markdown('<div class="main-header"><h1>🚨 Overdue & Denda</h1></div>', unsafe_allow_html=True)
