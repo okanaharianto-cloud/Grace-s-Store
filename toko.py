@@ -1046,9 +1046,12 @@ elif pilihan == "📤 Kredit Baru":
 
             st.markdown('<div class="section-header"><h3>💰 Pengaturan DP & Bunga (Bisa Diedit Manual)</h3></div>', unsafe_allow_html=True)
             
-            col_dp, col_tenor, col_bunga = st.columns(3)
+                        col_dp, col_tenor, col_bunga = st.columns(3)
             with col_dp:
-                dp_persen = st.number_input("DP (%)", min_value=float(dp_min_persen_default), max_value=100.0, value=float(dp_min_persen_default), step=1.0, help=f"Minimal DP dari Owner adalah {dp_min_persen_default}%")
+                # Mengubah min_value menjadi 0.0 agar bisa diketik manual berapapun
+                dp_persen = st.number_input("DP (%)", min_value=0.0, max_value=100.0, value=float(dp_min_persen_default), step=1.0, help=f"Minimal DP dari Owner adalah {dp_min_persen_default}%")
+                if dp_persen < dp_min_persen_default:
+                    st.warning(f"⚠️ DP di bawah batas minimal Owner ({dp_min_persen_default}%). Pastikan sudah disetujui!")
             with col_tenor:
                 tenor = st.selectbox("Tenor (Bulan)", tenor_list, index=min(3, len(tenor_list)-1))
             with col_bunga:
