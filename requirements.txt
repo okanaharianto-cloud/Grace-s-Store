@@ -31,3 +31,4 @@ pdfplumber
 python-docx
 pytesseract
 cryptography
+cryptography>=42.0.0
