@@ -1856,6 +1856,7 @@ elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
+# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional - PDF 1 & PDF 2 satu template</p></div>', unsafe_allow_html=True)
 
@@ -1900,7 +1901,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             m_cicilan      = st.number_input("Cicilan / Bulan (Rp)", value=float(d['cicilan_bulan']), step=10000.0)
             m_tenor        = st.number_input("Tenor (Bulan)", value=int(d['tenor']), step=1, min_value=1)
         with col_e3:
-            # Form input Tanggal Cetak yang bisa diedit
             m_tgl_cetak = st.date_input("Tanggal Cetak Invoice & Perjanjian", value=datetime.now().date(), help="Tanggal 'Pada hari ini' di Perjanjian dan Header Invoice")
             m_tempo     = st.date_input("Jatuh Tempo Awal", value=pd.to_datetime(d['jatuh_tempo']).date())
             m_status    = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(d['status']) if d['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
@@ -1928,7 +1928,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     biaya_materai = 10000
     cicilan_terakhir = m_cicilan + biaya_materai
 
-    # Translate Month for Indonesian
     bulan_indo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
     tgl_cetak_str = f"{m_tgl_cetak.day} {bulan_indo[m_tgl_cetak.month-1]} {m_tgl_cetak.year}"
 
@@ -1949,11 +1948,9 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             except:
                 def_date = datetime.now().date()
             
-            # Input tanggal per bulan
             new_date = st.date_input(f"Bulan ke-{i+1}", value=def_date, key=f"edit_due_{kid}_{i}")
             edited_dates.append(new_date)
 
-    # Apply edits to schedule
     sched_1 = default_sched
     for i, r in enumerate(sched_1):
         if i < len(edited_dates):
@@ -1972,7 +1969,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     :root { --primary:#1e3a8a; --primary-light:#eff6ff; --accent:#d97706; --accent-light:#fffbeb; --success:#059669; --success-light:#ecfdf5; --danger:#dc2626; --danger-light:#fef2f2; --text-main:#1f2937; --text-muted:#6b7280; --border:#e5e7eb; }
     * { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { font-family:'Inter','Segoe UI',Helvetica,Arial,sans-serif; background:#f3f4f6; padding:20px 10px; color:var(--text-main); font-size:12px; line-height:1.5; }
-    .page { max-width:820px; margin:0 auto 30px auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1); }
+    .page { max-width:820px; margin:0 auto 30px auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1); page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
     .btn-print-wrap { position:sticky; top:0; z-index:9999; background:rgba(243,244,246,0.95); padding:12px 0; text-align:center; border-bottom:1px solid var(--border); margin-bottom:20px; }
     .btn-print { background:linear-gradient(135deg,#2563eb,#1e40af); color:white; border:none; padding:10px 24px; font-size:14px; border-radius:50px; cursor:pointer; font-weight:600; width:100%; max-width:350px; box-shadow:0 4px 12px rgba(37,99,235,0.3); }
     .hdr { background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%); color:#fff; padding:20px 24px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; }
@@ -2017,10 +2015,11 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .status-lunas { background:#d1fae5; color:#065f46; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:700; }
     .status-pending { background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:700; }
     .note-text { font-size:10.5px; color:var(--text-muted); padding:10px 12px; background:#f9fafb; border-left:3px solid var(--accent); border-radius:4px; margin-bottom:16px; line-height:1.6; }
-    .bank-box { border:1px dashed var(--primary); background:var(--primary-light); padding:12px 16px; border-radius:8px; margin-bottom:16px; }
-    .bank-box .title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--primary); margin-bottom:4px; }
-    .bank-box .acc { font-size:15px; font-weight:800; font-family:monospace; color:var(--primary); }
-    .bank-box .name { font-size:11px; color:var(--text-muted); }
+    /* ===== BANK BOX RATA TENGAH ===== */
+    .bank-box { border:1px dashed var(--primary); background:var(--primary-light); padding:14px 16px; border-radius:8px; margin-bottom:16px; text-align:center; }
+    .bank-box .title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--primary); margin-bottom:6px; }
+    .bank-box .acc { font-size:17px; font-weight:800; font-family:monospace; color:var(--primary); letter-spacing:1px; }
+    .bank-box .name { font-size:11px; color:var(--text-muted); margin-top:2px; }
     .info-box { background:var(--danger-light); border:1px solid #fecaca; border-radius:8px; padding:12px 16px; font-size:10.5px; color:#7f1d1d; line-height:1.6; }
     
     /* CSS KHUSUS PERJANJIAN LEGAL */
@@ -2044,7 +2043,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .sig-box { text-align:center; }
     .sig-title { font-size:12px; font-weight:bold; margin-bottom:10px; }
     
-    /* Kotak E-Signature Tersertifikasi */
     .e-sign-box { border: 2px solid var(--success); background:#f0fdf4; border-radius:8px; padding:12px; margin:10px auto; width: 85%; text-align:center; }
     .e-sign-header { font-size:10px; font-weight:bold; color:var(--success); display:flex; align-items:center; justify-content:center; gap:5px; margin-bottom:8px; font-family: 'Inter', sans-serif; }
     .e-sign-name { font-size:14px; font-weight:bold; color:#000; margin-bottom:4px; font-family: 'Inter', sans-serif; }
@@ -2056,7 +2054,13 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .sig-role { font-size:11px; color:#000; margin-top:2px; }
 
     .footer { background:#f8fafc; padding:12px 24px; text-align:center; font-size:9.5px; color:var(--text-muted); border-top:1px solid var(--border); font-family:'Inter', sans-serif; }
-    @media print { body { background:#fff; padding:0; } .page { box-shadow:none; border-radius:0; margin:0; } .btn-print-wrap { display:none; } .page + .page { page-break-before:always; } }
+    @media print { 
+        body { background:#fff; padding:0; } 
+        .page { box-shadow:none; border-radius:0; margin:0; } 
+        .btn-print-wrap { display:none; } 
+        .page + .page { page-break-before:always; }
+        .page { page-break-after: always; }
+    }
     """
 
     # ====== HALAMAN 1: INVOICE (PDF 1) ======
@@ -2210,7 +2214,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <div class="sig-box">
                     <div class="sig-title">PIHAK PERTAMA (KREDITUR)</div>
                     
-                    <!-- Blok E-Signature Tersertifikasi -->
                     <div class="e-sign-box">
                         <div class="e-sign-header">
                             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
@@ -2273,7 +2276,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             use_container_width=True
         )
 
-    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
+    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
 # ==================== 11. OVERDUE & DENDA ====================
 elif pilihan == "🚨 Overdue & Denda":
     st.markdown('<div class="main-header"><h1>🚨 Overdue & Denda</h1></div>', unsafe_allow_html=True)
