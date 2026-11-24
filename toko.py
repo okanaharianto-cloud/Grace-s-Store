@@ -10,7 +10,31 @@ from datetime import datetime, timedelta
 import altair as alt
 import streamlit.components.v1 as components
 from PIL import Image
+from PIL import Image
 
+# ===== LIBRARY UNTUK IMPORT DOKUMEN =====
+try:
+    import pdfplumber
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
+    import pytesseract
+    from PIL import Image as PILImage
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
+try:
+    from docx import Document
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+import re
+
+# ==================== KONFIGURASI HALAMAN ====================
 # ==================== KONFIGURASI HALAMAN ====================
 st.set_page_config(
     page_title="GRACE'S STORE (CASH & CREDIT)",
@@ -396,6 +420,7 @@ with st.sidebar:
         "📥 Barang Masuk", 
         "🛒 Jual Cash", 
         "📤 Kredit Baru",
+        "📥 Import Dokumen (PDF/Word/Foto)", 
         "💰 Pembayaran Cicilan", 
         "🖨️ Cetak Slip Kredit",
         "👥 Data Customer", 
@@ -1452,7 +1477,360 @@ elif pilihan == "📦 Stok Barang":
                     except Exception as e:
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
+# ==================== 5B. IMPORT DOKUMEN (PDF / WORD / FOTO) ====================
+elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
+    st.markdown('<div class="main-header"><h1>📥 Import Dokumen Lama</h1><p>Migrasi data dari PDF / Word / Foto ke sistem</p></div>', unsafe_allow_html=True)
 
+    # ============== HELPER: EKSTRAKSI ==============
+    def parse_rupiah(s):
+        if not s: return 0.0
+        digits = re.sub(r"[^\d]", "", str(s))
+        return float(digits) if digits else 0.0
+
+    def extract_field(text, patterns):
+        for pat in patterns:
+            m = re.search(pat, text, re.IGNORECASE | re.MULTILINE)
+            if m:
+                return m.group(1).strip()
+        return ""
+
+    def auto_extract_fields(text):
+        hasil = {}
+        # NIK
+        hasil["nik"] = extract_field(text, [
+            r"NIK[:\s]+(\d{16})",
+            r"NIK[:\s]+([\d\.\s]{16,20})",
+            r"N\.I\.K[:\s]+(\d{16})",
+        ]).replace(" ", "").replace(".", "")
+
+        # Nama
+        hasil["nama"] = extract_field(text, [
+            r"Nama(?:\s+Lengkap)?[:\s]+([A-Z][A-Za-z\s\.\']+?)(?=\n|Telepon|Alamat|NIK|HP|WA|$)",
+            r"PIHAK KEDUA[^:]*:\s*([A-Z][A-Za-z\s\.\']+?)(?=,)",
+        ])
+
+        # Telepon
+        hasil["telepon"] = extract_field(text, [
+            r"(?:Telepon|Telp|HP|WA|Phone|No\.?\s*HP)[:\s\/]+([\+0-9\-\s\(\)]{9,20})",
+        ])
+
+        # Alamat
+        hasil["alamat"] = extract_field(text, [
+            r"Alamat[:\s]+(.+?)(?=\n|Telepon|NIK|HP|$)",
+            r"bertempat tinggal di\s+(.+?),\s*Telp",
+        ])
+
+        # Tanggal lahir
+        hasil["tanggal_lahir"] = extract_field(text, [
+            r"lahir di\s+([A-Za-z\s]+,\s*\d{1,2}[\s\-][A-Za-z0-9\s\-]+)",
+            r"Tanggal Lahir[:\s]+(\d{1,2}[\-\/]\d{1,2}[\-\/]\d{2,4})",
+            r"TTL[:\s]+([^\n]+)",
+        ])
+
+        # Status kawin
+        sw = extract_field(text, [r"Status(?:\s+Perkawinan|\s+Kawin)?[:\s]+(Belum Kawin|Kawin|Menikah|Cerai Hidup|Cerai Mati)"])
+        if sw.lower() in ["menikah", "kawin"]: hasil["status_kawin"] = "Kawin"
+        elif sw.lower() == "belum kawin": hasil["status_kawin"] = "Belum Kawin"
+        elif sw.lower() == "cerai hidup": hasil["status_kawin"] = "Cerai Hidup"
+        elif sw.lower() == "cerai mati": hasil["status_kawin"] = "Cerai Mati"
+        else: hasil["status_kawin"] = ""
+
+        # Harga cash
+        hasil["harga_cash"] = parse_rupiah(extract_field(text, [
+            r"Harga\s+Cash[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+            r"Harga\s+Jual[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+            r"Harga[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+        ]))
+
+        # DP
+        hasil["dp"] = parse_rupiah(extract_field(text, [
+            r"\bDP\b[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+            r"Uang\s+Muka[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+        ]))
+
+        # Pokok
+        hasil["pokok"] = parse_rupiah(extract_field(text, [
+            r"Pokok(?:\s+Hutang)?[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+        ]))
+
+        # Total hutang
+        hasil["total_hutang"] = parse_rupiah(extract_field(text, [
+            r"Total\s+Hutang[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+            r"Total\s+Kewajiban[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+        ]))
+
+        # Tenor
+        tenor_str = extract_field(text, [
+            r"Tenor[:\s]+(\d+)\s*(?:bulan|bln|×|x)",
+            r"Jangka\s+waktu[^0-9]*(\d+)\s*\(?\s*bulan",
+        ])
+        hasil["tenor"] = int(tenor_str) if tenor_str.isdigit() else 0
+
+        # Cicilan
+        hasil["cicilan"] = parse_rupiah(extract_field(text, [
+            r"Cicilan(?:\s*\/\s*Bulan)?[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+            r"Angsuran(?:\s*\/\s*bulan)?[:\s]+Rp[\s\.]*([\d\.,]{5,})",
+        ]))
+
+        # Bunga per bulan
+        bunga_str = extract_field(text, [
+            r"Bunga(?:\s+Flat)?[^0-9]*(\d+[\.,]?\d*)\s*%\s*(?:\/\s*Bulan|per\s+Bulan)",
+            r"Bunga(?:\s+Flat)?\s*\/\s*6\s*Bln[^0-9]*(\d+[\.,]?\d*)\s*%",
+        ])
+        try:
+            b = float(bunga_str.replace(",", "."))
+            # Kalau nilainya > 20 kemungkinan itu per 6 bulan → bagi 6
+            hasil["bunga"] = round(b / 6, 2) if b > 20 else b
+        except Exception:
+            hasil["bunga"] = 0.0
+
+        return hasil
+
+    # ============== UI UPLOAD ==============
+    tab_upload, tab_manual = st.tabs(["📤 Upload & Ekstrak", "✏️ Review & Migrasi Data"])
+
+    with tab_upload:
+        st.info("""
+        **Format didukung:** PDF (text-based), Word (.docx), Foto KTP/KK/Invoice (.jpg, .png)
+        - 📄 **PDF**: pakai `pdfplumber` — bisa extract teks & tabel
+        - 📝 **Word**: pakai `python-docx` — extract paragraf & tabel
+        - 🖼️ **Foto**: pakai `pytesseract` OCR — perlu Tesseract-OCR terinstall
+        """)
+
+        col_status1, col_status2, col_status3 = st.columns(3)
+        col_status1.metric("📄 PDF Support", "✅ Aktif" if PDF_AVAILABLE else "❌ pip install pdfplumber")
+        col_status2.metric("📝 Word Support", "✅ Aktif" if DOCX_AVAILABLE else "❌ pip install python-docx")
+        col_status3.metric("🖼️ OCR Support", "✅ Aktif" if OCR_AVAILABLE else "❌ pip install pytesseract")
+
+        uploaded_files = st.file_uploader(
+            "Pilih file (bisa multiple)",
+            type=["pdf", "docx", "jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+            key="upload_import"
+        )
+
+        if uploaded_files:
+            all_text = ""
+            progress = st.progress(0)
+            for idx, f in enumerate(uploaded_files):
+                progress.progress((idx + 1) / len(uploaded_files))
+                ext = f.name.lower().rsplit(".", 1)[-1]
+                try:
+                    if ext == "pdf":
+                        if not PDF_AVAILABLE:
+                            st.warning(f"⚠️ {f.name}: pdfplumber tidak terinstall"); continue
+                        with pdfplumber.open(f) as pdf:
+                            txt = "\n".join([p.extract_text() or "" for p in pdf.pages])
+                        all_text += f"\n\n=== {f.name} ===\n" + txt
+
+                    elif ext == "docx":
+                        if not DOCX_AVAILABLE:
+                            st.warning(f"⚠️ {f.name}: python-docx tidak terinstall"); continue
+                        doc_obj = Document(f)
+                        txt = "\n".join([p.text for p in doc_obj.paragraphs])
+                        for tbl in doc_obj.tables:
+                            for row in tbl.rows:
+                                txt += "\n" + " | ".join([cell.text for cell in row.cells])
+                        all_text += f"\n\n=== {f.name} ===\n" + txt
+
+                    elif ext in ("jpg", "jpeg", "png"):
+                        if not OCR_AVAILABLE:
+                            st.warning(f"⚠️ {f.name}: pytesseract tidak terinstall"); continue
+                        img = PILImage.open(f)
+                        try:
+                            txt = pytesseract.image_to_string(img, lang="ind")
+                        except Exception:
+                            txt = pytesseract.image_to_string(img, lang="eng")
+                        all_text += f"\n\n=== {f.name} ===\n" + txt
+
+                except Exception as e:
+                    st.warning(f"⚠️ Gagal proses {f.name}: {e}")
+
+            progress.empty()
+
+            st.session_state["_import_text"] = all_text
+            st.success(f"✅ Ekstrak selesai — total **{len(all_text)} karakter** dari {len(uploaded_files)} file.")
+
+            with st.expander("👁️ Preview Teks Hasil Ekstrak", expanded=False):
+                st.text_area("Teks mentah:", all_text, height=280, key="preview_raw", disabled=True)
+
+            # Tombol langsung pindah ke tab review
+            if st.button("➡️ Lanjut ke Review & Migrasi Data"):
+                st.info("Silakan buka tab **✏️ Review & Migrasi Data** di atas.")
+
+    with tab_manual:
+        text = st.session_state.get("_import_text", "")
+        if not text:
+            st.warning("⚠️ Belum ada file yang di-upload. Silakan upload di tab **📤 Upload & Ekstrak** dulu.")
+        else:
+            extracted = auto_extract_fields(text)
+
+            st.markdown('<div class="section-header"><h3>👤 Data Customer (hasil ekstrak otomatis — bisa diedit)</h3></div>', unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                imp_nama     = st.text_input("Nama Lengkap *", value=extracted.get("nama", ""), key="imp_nama")
+                imp_nik      = st.text_input("NIK (16 digit)", value=extracted.get("nik", ""), key="imp_nik")
+                imp_telepon  = st.text_input("Telepon / WA", value=extracted.get("telepon", ""), key="imp_telepon")
+            with col2:
+                imp_alamat   = st.text_area("Alamat", value=extracted.get("alamat", ""), key="imp_alamat", height=80)
+                imp_tgl_lhr  = st.text_input("Tanggal Lahir / TTL", value=extracted.get("tanggal_lahir", ""), key="imp_tgl_lhr")
+                opsi_sk = ["Belum Kawin", "Kawin", "Cerai Hidup", "Cerai Mati"]
+                imp_status_kawin = st.selectbox(
+                    "Status Kawin", opsi_sk,
+                    index=opsi_sk.index(extracted["status_kawin"]) if extracted.get("status_kawin") in opsi_sk else 1,
+                    key="imp_status_kawin"
+                )
+
+            st.markdown('<div class="section-header"><h3>📱 Data Kredit / Barang</h3></div>', unsafe_allow_html=True)
+            df_produk_imp = pd.read_sql_query("SELECT id, nama, harga_modal FROM produk ORDER BY nama", conn)
+            opsi_prod_imp = {"— Pilih Produk —": None}
+            for _, r in df_produk_imp.iterrows():
+                opsi_prod_imp[f"{r['nama']} (ID: {r['id']})"] = r['id']
+            pilih_prod_imp = st.selectbox("Produk *", list(opsi_prod_imp.keys()), key="imp_produk")
+
+            col3, col4, col5 = st.columns(3)
+            with col3:
+                imp_harga_cash = st.number_input("Harga Cash (Rp)", value=float(extracted.get("harga_cash", 0)), step=10000.0, key="imp_hc")
+                imp_dp         = st.number_input("DP Dibayar (Rp)", value=float(extracted.get("dp", 0)), step=10000.0, key="imp_dp")
+            with col4:
+                imp_pokok      = st.number_input("Pokok Hutang (Rp)", value=float(extracted.get("pokok", 0)), step=10000.0, key="imp_pokok")
+                imp_total      = st.number_input("Total Hutang (Rp)", value=float(extracted.get("total_hutang", 0)), step=10000.0, key="imp_total")
+            with col5:
+                imp_tenor      = st.number_input("Tenor (bulan)", value=int(extracted.get("tenor", 3)) or 3, min_value=1, key="imp_tenor")
+                imp_cicilan    = st.number_input("Cicilan / Bulan (Rp)", value=float(extracted.get("cicilan", 0)), step=10000.0, key="imp_cicilan")
+
+            col6, col7 = st.columns(2)
+            with col6:
+                imp_bunga = st.number_input("Bunga / Bulan (%)", value=float(extracted.get("bunga", 0)), step=0.1, format="%.2f", key="imp_bunga")
+            with col7:
+                imp_jatuh_tempo = st.date_input("Jatuh Tempo Pertama", value=(datetime.now() + timedelta(days=30)).date(), key="imp_jt")
+
+            st.markdown('<div class="section-header"><h3>📎 Lampiran Foto (opsional)</h3></div>', unsafe_allow_html=True)
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                imp_foto_ktp = st.file_uploader("Foto KTP", type=["jpg", "jpeg", "png"], key="imp_ktp")
+            with col_f2:
+                imp_foto_kk = st.file_uploader("Foto KK", type=["jpg", "jpeg", "png"], key="imp_kk")
+
+            st.markdown('<div class="section-header"><h3>🚀 Migrasi ke Database</h3></div>', unsafe_allow_html=True)
+
+            mode_simpan = st.radio(
+                "Mode penyimpanan",
+                ["Buat customer baru + kredit baru", "Gunakan customer yang sudah ada (pilih di bawah)"],
+                horizontal=True, key="mode_simpan"
+            )
+
+            existing_cust_id = None
+            if mode_simpan.startswith("Gunakan"):
+                df_cust_imp = pd.read_sql_query("SELECT id, nama FROM customer ORDER BY nama", conn)
+                if not df_cust_imp.empty:
+                    opsi_exist = {f"{r['nama']} (ID: {r['id']})": r['id'] for _, r in df_cust_imp.iterrows()}
+                    pilih_exist = st.selectbox("Pilih Customer Existing", list(opsi_exist.keys()), key="imp_exist_cust")
+                    existing_cust_id = opsi_exist[pilih_exist]
+                else:
+                    st.warning("Belum ada customer. Pakai mode **Buat customer baru**.")
+
+            if st.button("💾 MIGRASI KE DATABASE", type="primary"):
+                # Validasi
+                errors = []
+                if mode_simpan.startswith("Buat") and not imp_nama.strip():
+                    errors.append("Nama customer wajib diisi")
+                if not opsi_prod_imp[pilih_prod_imp]:
+                    errors.append("Produk wajib dipilih")
+                if imp_total <= 0:
+                    errors.append("Total hutang harus > 0")
+                if imp_tenor <= 0:
+                    errors.append("Tenor harus >= 1")
+                if mode_simpan.startswith("Gunakan") and existing_cust_id is None:
+                    errors.append("Pilih customer existing")
+
+                if errors:
+                    for e in errors: st.error(f"❌ {e}")
+                else:
+                    try:
+                        # === 1. Simpan / dapatkan customer_id ===
+                        if mode_simpan.startswith("Buat"):
+                            # Cek duplikat NIK
+                            if imp_nik and len(imp_nik) == 16:
+                                dup = c.execute("SELECT id FROM customer WHERE nik=?", (imp_nik,)).fetchone()
+                                if dup:
+                                    st.warning(f"⚠️ NIK sudah terdaftar di customer ID #{dup[0]}. Menggunakan customer yang ada.")
+                                    customer_id = dup[0]
+                                else:
+                                    path_ktp = save_uploaded_file(imp_foto_ktp, "KTP") if imp_foto_ktp else None
+                                    path_kk  = save_uploaded_file(imp_foto_kk, "KK")  if imp_foto_kk  else None
+                                    c.execute("""INSERT INTO customer
+                                        (nama, telepon, alamat, nik, tanggal_lahir, status_kawin, foto_ktp, foto_kk)
+                                        VALUES (?,?,?,?,?,?,?,?)""",
+                                        (imp_nama, imp_telepon, imp_alamat, imp_nik, imp_tgl_lhr, imp_status_kawin, path_ktp, path_kk))
+                                    customer_id = c.lastrowid
+                            else:
+                                path_ktp = save_uploaded_file(imp_foto_ktp, "KTP") if imp_foto_ktp else None
+                                path_kk  = save_uploaded_file(imp_foto_kk, "KK")  if imp_foto_kk  else None
+                                c.execute("""INSERT INTO customer
+                                    (nama, telepon, alamat, nik, tanggal_lahir, status_kawin, foto_ktp, foto_kk)
+                                    VALUES (?,?,?,?,?,?,?,?)""",
+                                    (imp_nama, imp_telepon, imp_alamat, imp_nik, imp_tgl_lhr, imp_status_kawin, path_ktp, path_kk))
+                                customer_id = c.lastrowid
+                        else:
+                            customer_id = existing_cust_id
+                            # Update customer dengan data terbaru kalau ada yang kosong
+                            c.execute("""UPDATE customer SET
+                                            telepon = COALESCE(NULLIF(?, ''), telepon),
+                                            alamat  = COALESCE(NULLIF(?, ''), alamat),
+                                            nik     = COALESCE(NULLIF(?, ''), nik)
+                                        WHERE id=?""",
+                                        (imp_telepon, imp_alamat, imp_nik, customer_id))
+
+                        # === 2. Simpan kredit ===
+                        produk_id_imp = opsi_prod_imp[pilih_prod_imp]
+                        tgl_kredit = datetime.now().strftime("%Y-%m-%d")
+                        c.execute("""INSERT INTO kredit
+                            (customer_id, produk_id, harga_cash, dp, pokok_hutang, total_hutang, tenor,
+                             cicilan_bulan, sisa_hutang, jatuh_tempo, status, tanggal_kredit, updated_at, updated_by)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (customer_id, produk_id_imp, imp_harga_cash, imp_dp, imp_pokok, imp_total,
+                             imp_tenor, imp_cicilan, imp_total, imp_jatuh_tempo.strftime("%Y-%m-%d"),
+                             "Berjalan", tgl_kredit, get_current_time(), st.session_state.username))
+                        kredit_id_baru = c.lastrowid
+
+                        # === 3. Kurangi stok 1 unit ===
+                        c.execute("UPDATE produk SET stok = stok - 1 WHERE id=?", (produk_id_imp,))
+
+                        conn.commit()
+                        log_aksi(st.session_state.username, "IMPORT_DOKUMEN",
+                                 f"Customer ID {customer_id}, Kredit ID {kredit_id_baru}")
+
+                        st.session_state.pop("_import_text", None)
+                        st.session_state.balloons = True
+                        flash(
+                            f"✅ **MIGRASI BERHASIL!** "
+                            f"Customer ID #{customer_id} & Kredit ID #{kredit_id_baru} telah tersimpan. "
+                            f"Silakan buka menu **🖨️ Cetak Slip Kredit** untuk melihat & mencetak dokumen resminya.",
+                            "success"
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"❌ Gagal migrasi: {e}")
+
+            # ============== RIWAYAT IMPORT ==============
+            st.markdown('<div class="section-header"><h3>📜 Riwayat Import Terakhir</h3></div>', unsafe_allow_html=True)
+            df_hist = pd.read_sql_query("""
+                SELECT k.id, c.nama AS customer, p.nama AS produk, k.total_hutang, k.tanggal_kredit, k.status
+                FROM kredit k
+                JOIN customer c ON k.customer_id = c.id
+                JOIN produk p ON k.produk_id = p.id
+                WHERE k.updated_by = ?
+                ORDER BY k.id DESC LIMIT 10
+            """, conn, params=(st.session_state.username,))
+            if not df_hist.empty:
+                df_hist['total_hutang'] = df_hist['total_hutang'].apply(format_rp)
+                df_hist = df_hist.rename(columns={'id':'ID','customer':'Customer','produk':'Produk',
+                                                  'total_hutang':'Total','tanggal_kredit':'Tanggal','status':'Status'})
+                st.dataframe(df_hist, use_container_width=True, hide_index=True)
+            else:
+                st.info("Belum ada riwayat import oleh Anda.")
 # ==================== 10. CETAK SLIP KREDIT (FULL HTML) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional sesuai standar OJK</p></div>', unsafe_allow_html=True)
