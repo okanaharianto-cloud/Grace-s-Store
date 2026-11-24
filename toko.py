@@ -951,8 +951,7 @@ elif pilihan == "🛒 Jual Cash":
                     except Exception as e:
                         conn.rollback()
                         st.error(f"❌ Gagal: {e}")
-
-                              st.markdown("**✏️ Edit Harga / Jumlah / Nominal Transaksi**")
+                st.markdown("**✏️ Edit Harga / Jumlah / Nominal Transaksi**")
                 opsi_edit_cash = {f"ID #{r['id']} - {r['produk']} - {format_rp(r['total_harga'])} ({r['tanggal']})": r['id'] for _, r in df_riw_all.iterrows()}
                 pilih_edit_cash = st.selectbox("Pilih transaksi untuk diedit:", list(opsi_edit_cash.keys()), key="sel_edit_cash")
                 id_edit_cash = opsi_edit_cash[pilih_edit_cash]
