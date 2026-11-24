@@ -1857,8 +1857,19 @@ elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
+# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional - PDF 1 & PDF 2 satu template</p></div>', unsafe_allow_html=True)
+
+    # =========================================================
+    # PENGATURAN DATA TOKO & LEGALITAS (SESUAIKAN DI SINI)
+    # =========================================================
+    ALAMAT_TOKO = "Sekolaq Darat, RT 007, RW 000, Kel./Desa Sekolaq Darat, Kec. Sekolaq Darat, Kab. Kutai Barat, Kalimantan Timur"
+    NO_TELP_TOKO = "0822-9954-8411" # Sesuaikan jika ada perubahan
+    NAMA_NOTARIS = "LADI AMELIA P, S.H., M.Kn."
+    NOMOR_AKTA = "03"
+    TANGGAL_AKTA = "23 September 2026"
+    # =========================================================
 
     df_k = pd.read_sql_query("""
         SELECT k.id, c.nama as customer, p.nama as produk, k.status, k.total_hutang, k.sisa_hutang, k.tanggal_kredit
@@ -2070,7 +2081,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div class="brand">
                 <h1>GRACE'S ELECTRONIC</h1>
                 <div class="tag">CASH &amp; CREDIT - AUTHORIZED RETAILER</div>
-                <div class="addr">{ALAMAT_TOKO}<br>HP/WA: 0822-9954-8411</div>
+                <div class="addr">{ALAMAT_TOKO}<br>HP/WA: {NO_TELP_TOKO}</div>
             </div>
             <div class="title-box">
                 <div class="badge-inv">Invoice Kredit</div>
@@ -2144,7 +2155,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div class="brand">
                 <h1>GRACE'S ELECTRONIC</h1>
                 <div class="tag">CASH &amp; CREDIT - AUTHORIZED RETAILER</div>
-                <div class="addr">{ALAMAT_TOKO}<br>HP/WA: 0822-9954-8411</div>
+                <div class="addr">{ALAMAT_TOKO}<br>HP/WA: {NO_TELP_TOKO}</div>
             </div>
             <div class="title-box">
                 <div class="badge-inv">Surat Perjanjian Kredit</div>
@@ -2169,7 +2180,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                 <tr>
                     <td class="label">PIHAK PERTAMA</td>
                     <td class="colon">:</td>
-                    <td class="content"><b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</td>
+                    <td class="content"><b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Berdasarkan Akta Notaris {NAMA_NOTARIS} Nomor {NOMOR_AKTA} Tanggal {TANGGAL_AKTA}. Dalam hal ini diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</td>
                 </tr>
                 <tr>
                     <td class="label">PIHAK KEDUA</td>
@@ -2275,6 +2286,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             mime="text/html",
             use_container_width=True
         )
+
+    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
 
     # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)    # (Tombol Download Word biarkan sama seperti kode Anda sebelumnya)
 # ==================== 11. OVERDUE & DENDA ====================
