@@ -40,3 +40,11 @@ pdfplumber
 python-docx
 pytesseract
 cryptography
+streamlit
+pandas
+altair
+pillow
+pdfplumber
+python-docx
+pytesseract
+cryptography
