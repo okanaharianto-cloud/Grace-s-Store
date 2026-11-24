@@ -1853,6 +1853,7 @@ elif pilihan == "📥 Import Dokumen (PDF/Word/Foto)":
                 st.info("Belum ada riwayat import oleh Anda.")
 # ==================== 10. CETAK SLIP KREDIT (FULL HTML) ====================
 # ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
+# ==================== 10. CETAK SLIP KREDIT (PDF 1 & PDF 2 IDENTIK) ====================
 elif pilihan == "🖨️ Cetak Slip Kredit":
     st.markdown('<div class="main-header"><h1>🖨️ Cetak Slip Kredit & Perjanjian</h1><p>Dokumen cetak profesional - PDF 1 & PDF 2 satu template</p></div>', unsafe_allow_html=True)
 
@@ -1893,15 +1894,15 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             m_dp         = st.number_input("DP Dibayar (Rp)", value=float(d['dp']), step=10000.0)
             m_pokok      = st.number_input("Pokok Hutang (Rp)", value=float(d['pokok_hutang']), step=10000.0)
         with col_e2:
-            m_total_hutang = st.number_input("Total Hutang (Rp)", value=float(d['total_hutang']), step=10000.0)
+            m_total_hutang = st.number_input("Total Hutang (Rp) (Disembunyikan di Cetakan)", value=float(d['total_hutang']), step=10000.0, help="Nilai ini tidak akan dicetak, hanya untuk perhitungan sistem.")
             m_cicilan      = st.number_input("Cicilan / Bulan (Rp)", value=float(d['cicilan_bulan']), step=10000.0)
             m_tenor        = st.number_input("Tenor (Bulan)", value=int(d['tenor']), step=1, min_value=1)
         with col_e3:
-            m_bunga_bln = st.number_input("Bunga Flat / Bulan (%)", value=round(get_pengaturan_float("bunga_flat_6bln_persen", 40.0) / 6, 2), step=0.1, format="%.2f")
-            m_tempo     = st.date_input("Jatuh Tempo Pertama", value=pd.to_datetime(d['jatuh_tempo']).date())
+            m_bunga_bln = st.number_input("Bunga Flat / Bulan (%) (Disembunyikan)", value=round(get_pengaturan_float("bunga_flat_6bln_persen", 40.0) / 6, 2), step=0.1, format="%.2f", help="Tidak akan dicetak.")
+            m_tempo     = st.date_input("Jatuh Tempo", value=pd.to_datetime(d['jatuh_tempo']).date())
+            m_tgl_cetak = st.date_input("Tanggal Cetak Dokumen", value=datetime.now().date(), help="Tanggal yang muncul di Invoice dan Perjanjian")
             m_status    = st.selectbox("Status", ["Berjalan", "Lunas", "Batal"], index=["Berjalan", "Lunas", "Batal"].index(d['status']) if d['status'] in ["Berjalan", "Lunas", "Batal"] else 0)
             m_metode    = st.radio("Metode", ["Tunai (Cash)", "Transfer Bank", "Kredit Angsuran"], index=2, horizontal=True)
-            sembunyikan_tgl = st.checkbox("Sembunyikan Tanggal Cetak (24 Nov)", value=False)
 
         if st.button("💾 Simpan Perubahan Ini ke Database"):
             try:
@@ -1924,11 +1925,10 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     paid_count   = len(df_bayar)
     biaya_materai = 10000
     cicilan_terakhir = m_cicilan + biaya_materai
-    
-    # Logic Sembunyikan Tanggal
-    tgl_cetak_str = "" if sembunyikan_tgl else datetime.now().strftime('%d %B %Y')
-    tgl_cetak_html = f'<div class="inv-date">{tgl_cetak_str}</div>' if tgl_cetak_str else ''
-    tgl_teks_akad = tgl_cetak_str if tgl_cetak_str else "[Tanggal Dihilangkan]"
+
+    # Translate Month for Indonesian
+    bulan_indo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+    tgl_cetak_str = f"{m_tgl_cetak.day} {bulan_indo[m_tgl_cetak.month-1]} {m_tgl_cetak.year}"
 
     # ====== BANGUN JADWAL ======
     total_1 = m_total_hutang
@@ -1941,7 +1941,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         for r in sched_1
     ])
 
-    # ====== CSS BERSAMA (PDF 1 + PDF 2 IDENTIK) ======
+    # ====== CSS BERSAMA ======
     shared_css = """
     :root { --primary:#1e3a8a; --primary-light:#eff6ff; --accent:#d97706; --accent-light:#fffbeb; --success:#059669; --success-light:#ecfdf5; --danger:#dc2626; --danger-light:#fef2f2; --text-main:#1f2937; --text-muted:#6b7280; --border:#e5e7eb; }
     * { box-sizing:border-box; margin:0; padding:0; }
@@ -1949,8 +1949,6 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .page { max-width:820px; margin:0 auto 30px auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px -5px rgba(0,0,0,0.1); }
     .btn-print-wrap { position:sticky; top:0; z-index:9999; background:rgba(243,244,246,0.95); padding:12px 0; text-align:center; border-bottom:1px solid var(--border); margin-bottom:20px; }
     .btn-print { background:linear-gradient(135deg,#2563eb,#1e40af); color:white; border:none; padding:10px 24px; font-size:14px; border-radius:50px; cursor:pointer; font-weight:600; width:100%; max-width:350px; box-shadow:0 4px 12px rgba(37,99,235,0.3); }
-    .btn-print:hover { transform:translateY(-2px); }
-
     .hdr { background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%); color:#fff; padding:20px 24px; display:flex; justify-content:space-between; align-items:flex-start; position:relative; overflow:hidden; }
     .brand { position:relative; z-index:1; max-width:70%; }
     .brand h1 { font-size:22px; font-weight:800; letter-spacing:0.5px; margin-bottom:4px; }
@@ -1960,10 +1958,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .badge-inv { display:inline-block; background:rgba(217,119,6,0.2); color:#fcd34d; padding:4px 12px; border-radius:6px; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; border:1px solid rgba(217,119,6,0.4); margin-bottom:8px; }
     .inv-no { font-size:15px; font-weight:700; font-family:monospace; letter-spacing:1px; }
     .inv-date { font-size:11px; color:#94a3b8; margin-top:4px; }
-
     .meta { display:flex; gap:20px; justify-content:space-between; padding:12px 24px; background:#f8fafc; border-bottom:1px solid var(--border); font-size:11px; color:var(--text-muted); flex-wrap:wrap; }
     .meta b { color:var(--text-main); }
-
     .body { padding:20px 24px; }
     .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
     .card { border:1px solid var(--border); border-radius:8px; padding:12px 16px; background:#fff; }
@@ -1972,57 +1968,42 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .kv-row:last-child { margin-bottom:0; }
     .kv-row .k { width:65px; color:var(--text-muted); }
     .kv-row .v { flex:1; font-weight:600; color:var(--text-main); }
-
     .summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
     .sum-card { border-radius:8px; padding:12px 16px; border:1px solid; }
     .sum-card .lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:4px; }
     .sum-card .val { font-size:18px; font-weight:800; }
     .sum-card.green { background:var(--success-light); border-color:#a7f3d0; color:var(--success); }
     .sum-card.amber { background:var(--accent-light); border-color:#fde68a; color:var(--accent); }
-    .sum-card.blue  { background:var(--primary-light); border-color:#bfdbfe; color:var(--primary); }
-    .sum-card.red   { background:var(--danger-light); border-color:#fecaca; color:var(--danger); }
-
-    .tenor-options { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+    .tenor-options { display:grid; grid-template-columns:1fr; gap:12px; margin-bottom:16px; }
     .tenor-card { border:1.5px solid var(--border); border-radius:8px; padding:12px 16px; background:#fff; }
     .tenor-card.recommended { border-color:var(--primary); background:var(--primary-light); }
     .tc-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:4px; }
-    .tenor-card.recommended .tc-label { color:var(--primary); }
     .tc-title { font-size:13px; font-weight:700; margin-bottom:8px; color:var(--text-main); }
     .tc-row { display:flex; justify-content:space-between; font-size:11px; padding:3px 0; }
     .tc-row.main { border-top:1px dashed var(--border); margin-top:6px; padding-top:6px; font-weight:700; color:var(--primary); }
-
     .sched-wrap { display:grid; gap:16px; margin-bottom:16px; }
     .sched { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
     .sched-h { background:var(--primary); color:#fff; padding:8px 12px; font-size:11px; font-weight:700; letter-spacing:0.5px; }
-    .sched-h.three { background:var(--accent); }
     table { width:100%; border-collapse:collapse; font-size:10.5px; }
     th { background:#f8fafc; padding:6px 8px; text-align:left; font-weight:700; color:var(--text-muted); font-size:10px; border-bottom:1px solid var(--border); }
     td { padding:6px 8px; border-bottom:1px solid #f1f5f9; }
     .r { text-align:right; } .c { text-align:center; }
     .status-lunas { background:#d1fae5; color:#065f46; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:700; }
     .status-pending { background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:700; }
-    .total { background:#f8fafc; font-weight:700; }
-
     .note-text { font-size:10.5px; color:var(--text-muted); padding:10px 12px; background:#f9fafb; border-left:3px solid var(--accent); border-radius:4px; margin-bottom:16px; line-height:1.6; }
     .bank-box { border:1px dashed var(--primary); background:var(--primary-light); padding:12px 16px; border-radius:8px; margin-bottom:16px; }
     .bank-box .title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--primary); margin-bottom:4px; }
     .bank-box .acc { font-size:15px; font-weight:800; font-family:monospace; color:var(--primary); }
     .bank-box .name { font-size:11px; color:var(--text-muted); }
     .info-box { background:var(--danger-light); border:1px solid #fecaca; border-radius:8px; padding:12px 16px; font-size:10.5px; color:#7f1d1d; line-height:1.6; }
-
-    /* ===== CLASS KHUSUS PERJANJIAN (PDF 2) ===== */
     .agreement-container { padding:4px 0; }
     .doc-title { text-align:center; border-bottom:2px solid var(--primary); padding-bottom:12px; margin-bottom:16px; }
     .doc-title h2 { font-size:15px; font-weight:800; color:var(--primary); letter-spacing:1px; margin-bottom:4px; }
     .doc-number { font-size:11px; color:var(--text-muted); font-family:monospace; }
     .pasal-title { background:var(--primary-light); color:var(--primary); padding:8px 14px; border-radius:6px; font-size:11px; font-weight:800; text-align:center; margin:16px 0 10px 0; letter-spacing:1px; text-transform:uppercase; border-left:4px solid var(--primary); }
-    .party-table { width:100%; margin-bottom:12px; font-size:11px; }
-    .party-table td { padding:6px 0; vertical-align:top; }
-    .party-table td.label { width:110px; }
     .pasal-list { padding-left:20px; font-size:11px; line-height:1.7; }
     .pasal-list li { margin-bottom:6px; }
     .agreement-container p { font-size:11px; line-height:1.7; margin-bottom:8px; text-align:justify; }
-
     .signature-area { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:32px; padding-top:24px; border-top:1px dashed var(--border); }
     .sig-box { text-align:center; }
     .sig-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:10px; }
@@ -2035,15 +2016,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     .cert-sig-barcode { margin-top:8px; display:flex; justify-content:center; }
     .ematerai-box { border:2px dashed var(--accent); background:var(--accent-light); border-radius:8px; padding:24px 10px; margin:12px 0; font-size:10px; color:var(--accent); font-weight:700; letter-spacing:0.5px; }
     .ematerai-box::before { content:'🔖'; display:block; font-size:20px; margin-bottom:6px; }
-
     .footer { background:#f8fafc; padding:12px 24px; text-align:center; font-size:9.5px; color:var(--text-muted); border-top:1px solid var(--border); }
-
-    @media print {
-        body { background:#fff; padding:0; }
-        .page { box-shadow:none; border-radius:0; margin:0; }
-        .btn-print-wrap { display:none; }
-        .page + .page { page-break-before:always; }
-    }
+    @media print { body { background:#fff; padding:0; } .page { box-shadow:none; border-radius:0; margin:0; } .btn-print-wrap { display:none; } .page + .page { page-break-before:always; } }
     """
 
     # ====== HALAMAN 1: INVOICE (PDF 1) ======
@@ -2058,13 +2032,12 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div class="title-box">
                 <div class="badge-inv">Invoice Kredit</div>
                 <div class="inv-no">#GRC-INV-{kid}</div>
-                {tgl_cetak_html}
+                <div class="inv-date">{tgl_cetak_str}</div>
             </div>
         </header>
         <div class="meta">
             <div>Status: <b style="color:var(--success);">● {m_status.upper()}</b></div>
             <div>Metode: <b>{m_metode}</b></div>
-            <div>Bunga Flat: <b>{m_bunga_bln}% / Bulan</b></div>
         </div>
         <div class="body">
             <div class="grid-2">
@@ -2079,31 +2052,30 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                     <div class="kv-row"><div class="k">Deskripsi</div><div class="v">{d['pn']}</div></div>
                     <div class="kv-row"><div class="k">SKU</div><div class="v">GRC-{d['produk_id']}</div></div>
                     <div class="kv-row"><div class="k">Garansi</div><div class="v">3 Bulan</div></div>
-                    <div class="kv-row"><div class="k">Harga</div><div class="v">{format_rp(m_harga_cash)}</div></div>
                 </div>
             </div>
             <div class="summary-grid">
                 <div class="sum-card green"><div class="lbl">DP Dibayar</div><div class="val">{format_rp(m_dp)}</div></div>
                 <div class="sum-card amber"><div class="lbl">Angsuran / Bulan</div><div class="val">{format_rp(m_cicilan)}</div></div>
             </div>
-            <div class="tenor-options" style="grid-template-columns:1fr;">
+            <div class="tenor-options">
                 <div class="tenor-card recommended">
                     <div class="tc-label">Tenor Dipilih</div>
                     <div class="tc-title">Tenor {tenor_asli}× ({tenor_asli} Bulan)</div>
                     <div class="tc-row main"><span class="k">Angsuran / bulan</span><span class="v">{format_rp(m_cicilan)}</span></div>
                 </div>
             </div>
-            <div class="sched-wrap" style="grid-template-columns:1fr;">
+            <div class="sched-wrap">
                 <div class="sched">
                     <div class="sched-h">📅 Jadwal Angsuran — Tenor {tenor_asli}×</div>
                     <table>
                         <thead><tr><th class="c" style="width:26px;">#</th><th>Jatuh Tempo</th><th class="r">Angsuran</th><th class="r">Sisa</th><th class="c">Status</th></tr></thead>
-                        <tbody>{rows_1}<tr class="total"><td class="c" colspan="2">TOTAL KEWAJIBAN</td><td class="r">{format_rp(total_1)}</td><td class="r">Rp 0</td><td class="c">—</td></tr></tbody>
+                        <tbody>{rows_1}</tbody>
                     </table>
                 </div>
             </div>
             <div class="note-text">
-                *Catatan: DP {format_rp(m_dp)} telah diterima. Pokok {format_rp(m_pokok)} diangsur sesuai tenor. Terdapat Biaya Administrasi/Materai <b>Rp 10.000</b> (di luar angsuran) yang ditagihkan pada angsuran terakhir. Total setoran bulan ke-{tenor_asli}: <b>{format_rp(cicilan_terakhir)}</b>.
+                *Catatan: Terdapat Biaya Administrasi/Materai sebesar <b>Rp 10.000</b> (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir. Total yang disetor pada bulan ke-{tenor_asli} adalah <b>{format_rp(cicilan_terakhir)}</b>.
             </div>
             <div class="bank-box">
                 <div class="title">Pembayaran Transfer Resmi</div>
@@ -2112,7 +2084,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             </div>
             <div class="info-box">
                 <strong>⚠️ PENTING - KONSEKUENSI MANGKIR</strong><br>
-                Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke <b>Sistem Layanan Informasi Keuangan (SLIK) OJK</b> dan/atau <b>BI Checking</b>. Debitur dapat masuk daftar hitam (blacklist) yang menyulitkan pengajuan kredit di lembaga keuangan manapun.
+                Jika Debitur lalai/mangkir dalam pembayaran angsuran, Kreditur berhak melaporkan Debitur ke <b>SLIK OJK</b> dan/atau <b>BI Checking</b>. Debitur dapat masuk daftar hitam (blacklist) yang menyulitkan pengajuan kredit di lembaga keuangan manapun.
             </div>
         </div>
         <footer class="footer">
@@ -2122,7 +2094,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
     </div>
     """
 
-    # ====== HALAMAN 2: PERJANJIAN (PDF 2) - SAMA PERSIS DENGAN PDF ANDA ======
+    # ====== HALAMAN 2: PERJANJIAN (PDF 2) ======
     html_page2 = f"""
     <div class="page">
         <header class="hdr">
@@ -2134,7 +2106,7 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
             <div class="title-box">
                 <div class="badge-inv">Surat Perjanjian Kredit</div>
                 <div class="inv-no">#GRC-INV-{kid}</div>
-                {tgl_cetak_html}
+                <div class="inv-date">{tgl_cetak_str}</div>
             </div>
         </header>
         <div class="meta">
@@ -2144,58 +2116,60 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
         </div>
         <div class="body">
             <div class="agreement-container">
-                
-                <p>Pada hari ini, <b>{tgl_teks_akad}</b>, yang bertanda tangan di bawah ini:</p>
+                <div class="doc-title">
+                    <h2>PERJANJIAN PEMBIAYAAN KONSUMEN</h2>
+                    <div class="doc-number">Nomor: GRC-INV-{kid}/PERJ/2026</div>
+                </div>
 
-                <table class="party-table">
-                    <tr>
-                        <td class="label"><b>PIHAK PERTAMA</b></td>
-                        <td>: <b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Berdasarkan Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Dalam hal ini diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</td>
-                    </tr>
-                    <tr>
-                        <td class="label"><b>PIHAK KEDUA</b></td>
-                        <td>: <b>{d['cn'].upper()}</b>, lahir di {tgl_lahir_cust}, Warga Negara Indonesia, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang Kartu Tanda Penduduk (KTP) dengan NIK: <b>{nik_cust}</b>.</td>
-                    </tr>
-                </table>
-                
-                <p>Kedua belah pihak sepakat untuk mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan sebagai berikut:</p>
-                
-                <div class="pasal-title">Pasal 1<br>Objek Perjanjian</div>
-                <p>Pihak Pertama setuju untuk membiayai pembelian barang berupa <b>{d['pn']}</b> (SKU: GRC-{d['produk_id']}) kepada Pihak Kedua, dan Pihak Kedua setuju untuk membeli barang tersebut secara angsuran sesuai dengan ketentuan yang diatur dalam perjanjian ini.</p>
-                
-                <div class="pasal-title">Pasal 2<br>Ketentuan Pembayaran</div>
+                <p>Pada hari ini, <b>{tgl_cetak_str}</b>, yang bertanda tangan di bawah ini:</p>
+
+                <div class="card" style="margin-bottom:10px;">
+                    <div class="card-title">🏢 PIHAK PERTAMA (KREDITUR)</div>
+                    <p style="margin:0;"><b>CV. GRACE HAVEN TRANSPORT</b> (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Diwakili oleh <b>ADI HARIANTO, S.E.</b> selaku Direktur.</p>
+                </div>
+
+                <div class="card" style="margin-bottom:10px;">
+                    <div class="card-title">👤 PIHAK KEDUA (DEBITUR)</div>
+                    <p style="margin:0;"><b>{d['cn'].upper()}</b>, lahir di {tgl_lahir_cust}, WNI, Pekerjaan Wiraswasta, Status Perkawinan <b>{status_kawin_cust}</b>, bertempat tinggal di {d['alamat']}, Telp/WA: <b>{d['telepon']}</b>. Pemegang KTP dengan NIK: <b>{nik_cust}</b>.</p>
+                </div>
+
+                <p>Kedua belah pihak sepakat mengikatkan diri dalam Perjanjian Pembiayaan Konsumen dengan ketentuan:</p>
+
+                <div class="pasal-title">Pasal 1 — Objek Perjanjian</div>
+                <p>Pihak Pertama setuju membiayai pembelian barang berupa <b>{d['pn']}</b> kepada Pihak Kedua, dan Pihak Kedua setuju membeli barang tersebut secara angsuran sesuai ketentuan dalam perjanjian ini.</p>
+
+                <div class="pasal-title">Pasal 2 — Ketentuan Pembayaran</div>
                 <ol class="pasal-list">
-                    <li>Uang Muka (DP) yang telah dibayarkan oleh Pihak Kedua adalah sebesar <b>{format_rp(m_dp)}</b>.</li>
-                    <li>Total kewajiban angsuran yang harus dibayar oleh Pihak Kedua adalah sebesar <b>{format_rp(m_total_hutang)}</b>.</li>
-                    <li>Jangka waktu pembiayaan adalah <b>{tenor_asli} (bulan)</b>, dengan angsuran bulanan sebesar <b>{format_rp(m_cicilan)}</b>.</li>
-                    <li>Angsuran pertama wajib dibayarkan pada tanggal <b>{m_tempo.strftime('%d %B %Y')}</b> dan selanjutnya paling lambat pada tanggal yang sama setiap bulannya sampai dengan selesai.</li>
-                    <li>Pembayaran angsuran wajib dilakukan secara tunai di toko atau melalui transfer ke rekening resmi perusahaan: <b>Bank Mandiri No. Rekening 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT</b>.</li>
-                    <li>Pihak Kedua dikenakan <b>Biaya Administrasi berupa bea materai sebesar Rp 10.000</b> yang posisinya <b>BERADA DI LUAR nominal angsuran</b>. Biaya tersebut akan ditagihkan dan dibayarkan bersamaan dengan setoran angsuran terakhir (angsuran ke-{tenor_asli}). Dengan demikian, total pembayaran pada bulan ke-{tenor_asli} adalah sebesar <b>{format_rp(cicilan_terakhir)}</b> ({format_rp(m_cicilan)} angsuran + Rp 10.000 materai).</li>
-                </ol>
-                
-                <div class="pasal-title">Pasal 3<br>Denda Dan Wanprestasi</div>
-                <ol class="pasal-list">
-                    <li>Apabila Pihak Kedua terlambat membayar angsuran melewati tanggal jatuh tempo, dikenakan denda sebesar <b>{get_pengaturan_float("denda_per_hari_persen", 0.4)}% (nol koma empat persen) per hari</b> dari jumlah angsuran yang tertunggak, dengan total denda maksimal 100% dari pokok pembiayaan.</li>
-                    <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran selama 2 (dua) bulan berturut-turut.</li>
-                    <li>Apabila Debitur mangkir/lalai dalam pembayaran, Kreditur berhak melaporkan Debitur ke <b>Sistem Layanan Informasi Keuangan (SLIK) OJK dan/atau BI Checking</b>, yang mengakibatkan Debitur masuk dalam daftar hitam (<i>blacklist</i>) dan menyulitkan Debitur memperoleh fasilitas kredit di kemudian hari.</li>
+                    <li>Uang Muka (DP) yang telah dibayarkan Pihak Kedua sebesar <b>{format_rp(m_dp)}</b>.</li>
+                    <li>Jangka waktu pembiayaan <b>{tenor_asli} (bulan)</b>, dengan angsuran bulanan <b>{format_rp(m_cicilan)}</b>.</li>
+                    <li>Angsuran pertama wajib dibayar tanggal <b>{m_tempo.strftime('%d-%m-%Y')}</b> dan selanjutnya paling lambat tanggal yang sama setiap bulan.</li>
+                    <li>Pembayaran dilakukan tunai di toko atau transfer ke rekening resmi: <b>Bank Mandiri No. Rek. 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT</b>.</li>
+                    <li>Pihak Kedua dikenakan <b>Biaya Administrasi (bea materai) Rp 10.000</b> di luar nominal angsuran, ditagih bersamaan angsuran terakhir. Total bulan ke-{tenor_asli}: <b>{format_rp(cicilan_terakhir)}</b>.</li>
                 </ol>
 
-                <div class="pasal-title">Pasal 4<br>Penyelesaian Sengketa Dan Domisili</div>
+                <div class="pasal-title">Pasal 3 — Denda dan Wanprestasi</div>
                 <ol class="pasal-list">
-                    <li>Segala perselisihan yang timbul dari perjanjian ini akan diselesaikan secara musyawarah mufakat oleh Para Pihak.</li>
-                    <li>Apabila musyawarah tidak mencapai kesepakatan, Para Pihak sepakat untuk menyelesaikannya melalui <b>Lembaga Alternatif Penyelesaian Sengketa Sektor Jasa Keuangan (LAPS SJK)</b> atau <b>Pengadilan Negeri Kutai Barat</b>.</li>
-                    <li>Kreditur dilarang melakukan penarikan objek pembiayaan secara paksa tanpa prosedur hukum yang sah sesuai dengan POJK Nomor 22 Tahun 2023 dan Putusan Mahkamah Konstitusi Nomor 18/PUU-XVII/2019.</li>
-                    <li>Para pihak memilih domisili hukum yang umum dan tetap di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
+                    <li>Keterlambatan pembayaran dikenakan denda <b>{get_pengaturan_float("denda_per_hari_persen", 1.0)}% per hari</b> dari angsuran tertunggak.</li>
+                    <li>Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran 2 (dua) bulan berturut-turut.</li>
+                    <li>Apabila Debitur mangkir, Kreditur berhak melaporkan ke <b>SLIK OJK</b> dan/atau <b>BI Checking</b> yang mengakibatkan Debitur masuk daftar hitam (blacklist).</li>
                 </ol>
 
-                <div class="pasal-title">Pasal 5<br>Ketentuan Penutup</div>
-                <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Perjanjian ini dibuat dalam rangkap 2 (dua) yang masing-masing mempunyai kekuatan hukum yang sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
-                
+                <div class="pasal-title">Pasal 4 — Penyelesaian Sengketa &amp; Domisili</div>
+                <ol class="pasal-list">
+                    <li>Perselisihan diselesaikan secara musyawarah mufakat.</li>
+                    <li>Apabila gagal, diselesaikan melalui <b>LAPS SJK</b> atau <b>Pengadilan Negeri Kutai Barat</b>.</li>
+                    <li>Kreditur dilarang menarik objek pembiayaan secara paksa tanpa prosedur hukum sesuai POJK No. 22 Tahun 2023 dan Putusan MK No. 18/PUU-XVII/2019.</li>
+                    <li>Para pihak memilih domisili hukum di Kantor Panitera Pengadilan Negeri Kutai Barat.</li>
+                </ol>
+
+                <div class="pasal-title">Pasal 5 — Ketentuan Penutup</div>
+                <p>Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. Dibuat rangkap 2 (dua), masing-masing berkekuatan hukum sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua.</p>
+
                 <div class="signature-area">
                     <div class="sig-box">
-                        <div class="sig-title">PIHAK PERTAMA (KREDITUR)</div>
+                        <div class="sig-title">Pihak Pertama (Kreditur)</div>
                         <div class="cert-sig-box">
-                            <div class="cert-sig-header">TERSERTIFIKASI</div>
+                            <div class="cert-sig-header">🛡️ TERSERTIFIKASI</div>
                             <div class="cert-sig-name">ADI HARIANTO, S.E.</div>
                             <div class="cert-sig-text">Ditandatangani secara elektronik<br>Menggunakan Sertifikat PSrE</div>
                         </div>
@@ -2203,8 +2177,8 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
                         <div class="sig-role">Direktur CV. Grace Haven Transport</div>
                     </div>
                     <div class="sig-box">
-                        <div class="sig-title">PIHAK KEDUA (DEBITUR)</div>
-                        <div class="ematerai-box">(Tempel e-Meterai / TTD Basah)</div>
+                        <div class="sig-title">Pihak Kedua (Debitur)</div>
+                        <div class="ematerai-box">Tempel e-Meterai / TTD Basah</div>
                         <div class="sig-name">{d['cn'].upper()}</div>
                         <div class="sig-role">Pemegang KTP NIK: {nik_cust}</div>
                     </div>
@@ -2239,6 +2213,218 @@ elif pilihan == "🖨️ Cetak Slip Kredit":
 
     components.html(full_html, height=1900, scrolling=True)
 
+    # ====== DOWNLOAD BUTTONS ======
+    st.markdown('<div class="section-header"><h3>💾 Unduh Dokumen</h3></div>', unsafe_allow_html=True)
+    col_dl1, col_dl2 = st.columns(2)
+
+    with col_dl1:
+        st.download_button(
+            "📄 Download HTML (siap print PDF)",
+            data=full_html,
+            file_name=f"Invoice_Perjanjian_{kid}.html",
+            mime="text/html",
+            use_container_width=True
+        )
+
+    with col_dl2:
+        if DOCX_AVAILABLE:
+            def generate_word(kid, d, m_dp, m_cicilan, m_tenor, m_tempo, m_status, m_metode, sched_1, cicilan_terakhir, nik_cust, tgl_lahir_cust, status_kawin_cust, tgl_cetak_str):
+                doc = Document()
+                for section in doc.sections:
+                    section.top_margin = Cm(1.5); section.bottom_margin = Cm(1.5)
+                    section.left_margin = Cm(2); section.right_margin = Cm(2)
+
+                style = doc.styles['Normal']
+                style.font.name = 'Calibri'
+                style.font.size = Pt(10)
+
+                # HEADER
+                hdr_tbl = doc.add_table(rows=1, cols=2)
+                hdr_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+                hdr_tbl.autofit = False
+                hdr_tbl.columns[0].width = Cm(11)
+                hdr_tbl.columns[1].width = Cm(6)
+
+                h0 = hdr_tbl.cell(0, 0).paragraphs[0]
+                run = h0.add_run("GRACE'S ELECTRONIC")
+                run.bold = True; run.font.size = Pt(18); run.font.color.rgb = RGBColor(0x1e, 0x3a, 0x8a)
+                p_tag = hdr_tbl.cell(0, 0).add_paragraph("CASH & CREDIT - AUTHORIZED RETAILER")
+                p_tag.runs[0].font.size = Pt(9); p_tag.runs[0].font.color.rgb = RGBColor(0x6b, 0x72, 0x80)
+                p_addr = hdr_tbl.cell(0, 0).add_paragraph(f"{ALAMAT_TOKO}\nHP/WA: 0822-9954-8411")
+                p_addr.runs[0].font.size = Pt(9); p_addr.runs[0].font.color.rgb = RGBColor(0x6b, 0x72, 0x80)
+
+                h1 = hdr_tbl.cell(0, 1).paragraphs[0]
+                h1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                r = h1.add_run("INVOICE KREDIT"); r.bold = True; r.font.size = Pt(11); r.font.color.rgb = RGBColor(0xd9, 0x77, 0x06)
+                p_no = hdr_tbl.cell(0, 1).add_paragraph(f"#GRC-INV-{kid}"); p_no.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                p_no.runs[0].bold = True; p_no.runs[0].font.size = Pt(11)
+                p_dt = hdr_tbl.cell(0, 1).add_paragraph(tgl_cetak_str); p_dt.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                p_dt.runs[0].font.size = Pt(9); p_dt.runs[0].font.color.rgb = RGBColor(0x6b, 0x72, 0x80)
+
+                doc.add_paragraph()
+                doc.add_heading("Data Transaksi", level=2)
+                tbl = doc.add_table(rows=4, cols=2)
+                tbl.style = 'Light Grid Accent 1'
+                data_pairs = [
+                    ("Customer", d['cn']),
+                    ("Telepon", str(d['telepon'])),
+                    ("Produk", d['pn']),
+                    ("Status", m_status),
+                ]
+                for i, (k, v) in enumerate(data_pairs):
+                    tbl.cell(i, 0).text = k
+                    tbl.cell(i, 1).text = str(v)
+                    for cell in tbl.rows[i].cells:
+                        for p in cell.paragraphs:
+                            for r in p.runs: r.font.size = Pt(10)
+
+                doc.add_paragraph()
+                doc.add_heading("Ringkasan Pembiayaan", level=2)
+                ringkasan = doc.add_table(rows=3, cols=2)
+                ringkasan.style = 'Light Grid Accent 1'
+                ringkasan_data = [
+                    ("DP Dibayar", format_rp(m_dp)),
+                    ("Tenor", f"{m_tenor} bulan"),
+                    ("Cicilan / Bulan", format_rp(m_cicilan)),
+                ]
+                for i, (k, v) in enumerate(ringkasan_data):
+                    ringkasan.cell(i, 0).text = k
+                    ringkasan.cell(i, 1).text = str(v)
+                    for cell in ringkasan.rows[i].cells:
+                        for p in cell.paragraphs:
+                            for r in p.runs: r.font.size = Pt(10)
+
+                doc.add_paragraph()
+                doc.add_heading(f"Jadwal Angsuran — Tenor {m_tenor}x", level=2)
+                jadwal = doc.add_table(rows=1, cols=5)
+                jadwal.style = 'Light Grid Accent 1'
+                for i, h in enumerate(["#", "Jatuh Tempo", "Angsuran", "Sisa", "Status"]):
+                    jadwal.rows[0].cells[i].text = h
+                    for p in jadwal.rows[0].cells[i].paragraphs:
+                        for r in p.runs: r.bold = True
+                for row in sched_1:
+                    cells = jadwal.add_row().cells
+                    cells[0].text = str(row['ke'])
+                    cells[1].text = str(row['jatuh_tempo'])
+                    cells[2].text = format_rp(row['angsuran'])
+                    cells[3].text = format_rp(row['sisa'])
+                    cells[4].text = "LUNAS" if row['ke'] <= paid_count else "BELUM"
+
+                doc.add_paragraph()
+                p_note = doc.add_paragraph(
+                    f"*Catatan: Terdapat Biaya Administrasi/Materai sebesar Rp 10.000 (di luar angsuran) yang ditagihkan bersamaan dengan pembayaran angsuran terakhir. "
+                    f"Total yang disetor pada bulan ke-{m_tenor} adalah {format_rp(cicilan_terakhir)}."
+                )
+                p_note.runs[0].font.size = Pt(9)
+
+                p_bank = doc.add_paragraph()
+                p_bank.add_run("Pembayaran Transfer Resmi: ").bold = True
+                p_bank.add_run("Bank Mandiri 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT").font.size = Pt(10)
+
+                # HALAMAN 2: PERJANJIAN
+                doc.add_page_break()
+                hdr2 = doc.add_paragraph()
+                hdr2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                r = hdr2.add_run("SURAT PERJANJIAN KREDIT")
+                r.bold = True; r.font.size = Pt(16); r.font.color.rgb = RGBColor(0x1e, 0x3a, 0x8a)
+                p_num = doc.add_paragraph(f"Nomor: GRC-INV-{kid}/PERJ/2026")
+                p_num.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p_num.runs[0].font.size = Pt(10)
+
+                doc.add_paragraph()
+                doc.add_paragraph(f"Pada hari ini, {tgl_cetak_str}, yang bertanda tangan di bawah ini:")
+
+                doc.add_heading("Pihak Pertama (Kreditur)", level=3)
+                doc.add_paragraph(
+                    f"CV. GRACE HAVEN TRANSPORT (Grace's Electronic), berkedudukan di {ALAMAT_TOKO}. "
+                    f"Akta Notaris Ladi Amelia P, S.H., M.Kn. Nomor 03 Tanggal 23 September 2026, "
+                    f"NIB: 1510260022275, NPWP: 1000 0000 1152 1195. Diwakili oleh ADI HARIANTO, S.E. selaku Direktur."
+                )
+
+                doc.add_heading("Pihak Kedua (Debitur)", level=3)
+                doc.add_paragraph(
+                    f"{d['cn'].upper()}, lahir di {tgl_lahir_cust}, WNI, Pekerjaan Wiraswasta, "
+                    f"Status Perkawinan {status_kawin_cust}, bertempat tinggal di {d['alamat']}, "
+                    f"Telp/WA: {d['telepon']}. Pemegang KTP dengan NIK: {nik_cust}."
+                )
+
+                doc.add_heading("Pasal 1 — Objek Perjanjian", level=3)
+                doc.add_paragraph(
+                    f"Pihak Pertama setuju membiayai pembelian barang berupa {d['pn']} kepada Pihak Kedua, "
+                    f"dan Pihak Kedua setuju membeli barang tersebut secara angsuran sesuai ketentuan dalam perjanjian ini."
+                )
+
+                doc.add_heading("Pasal 2 — Ketentuan Pembayaran", level=3)
+                pasal2 = [
+                    f"Uang Muka (DP) yang telah dibayarkan Pihak Kedua sebesar {format_rp(m_dp)}.",
+                    f"Jangka waktu pembiayaan {m_tenor} bulan, dengan angsuran bulanan {format_rp(m_cicilan)}.",
+                    f"Angsuran pertama wajib dibayar tanggal {m_tempo.strftime('%d-%m-%Y')} dan selanjutnya paling lambat tanggal yang sama setiap bulan.",
+                    f"Pembayaran dilakukan tunai di toko atau transfer ke rekening resmi: Bank Mandiri No. Rek. 148-00-2889246-4 a.n. CV GRACE HAVEN TRANSPORT.",
+                    f"Pihak Kedua dikenakan Biaya Administrasi (bea materai) Rp 10.000 di luar nominal angsuran, ditagih bersamaan angsuran terakhir. Total bulan ke-{m_tenor}: {format_rp(cicilan_terakhir)}.",
+                ]
+                for item in pasal2: doc.add_paragraph(item, style='List Number')
+
+                doc.add_heading("Pasal 3 — Denda dan Wanprestasi", level=3)
+                pasal3 = [
+                    f"Keterlambatan pembayaran dikenakan denda {get_pengaturan_float('denda_per_hari_persen', 1.0)}% per hari dari angsuran tertunggak.",
+                    "Pihak Kedua dinyatakan wanprestasi apabila gagal membayar angsuran 2 (dua) bulan berturut-turut.",
+                    "Apabila Debitur mangkir, Kreditur berhak melaporkan ke SLIK OJK dan/atau BI Checking yang mengakibatkan Debitur masuk daftar hitam (blacklist).",
+                ]
+                for item in pasal3: doc.add_paragraph(item, style='List Number')
+
+                doc.add_heading("Pasal 4 — Penyelesaian Sengketa & Domisili", level=3)
+                pasal4 = [
+                    "Perselisihan diselesaikan secara musyawarah mufakat.",
+                    "Apabila gagal, diselesaikan melalui LAPS SJK atau Pengadilan Negeri Kutai Barat.",
+                    "Kreditur dilarang menarik objek pembiayaan secara paksa tanpa prosedur hukum sesuai POJK No. 22 Tahun 2023 dan Putusan MK No. 18/PUU-XVII/2019.",
+                    "Para pihak memilih domisili hukum di Kantor Panitera Pengadilan Negeri Kutai Barat.",
+                ]
+                for item in pasal4: doc.add_paragraph(item, style='List Number')
+
+                doc.add_heading("Pasal 5 — Ketentuan Penutup", level=3)
+                doc.add_paragraph(
+                    "Perjanjian ini dibuat dengan sadar, tanpa paksaan, dan dalam keadaan sehat jasmani dan rohani. "
+                    "Dibuat rangkap 2 (dua), masing-masing berkekuatan hukum sama, satu untuk Pihak Pertama dan satu untuk Pihak Kedua."
+                )
+
+                doc.add_paragraph()
+                doc.add_paragraph()
+                ttd = doc.add_table(rows=1, cols=2)
+                ttd.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+                c1 = ttd.cell(0, 0).paragraphs[0]
+                c1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                c1.add_run("PIHAK PERTAMA\n").bold = True
+                c1.add_run("\n\n\n\n").font.size = Pt(10)
+                c1.add_run("ADI HARIANTO, S.E.").bold = True
+                c1.add_run("\nDirektur CV. Grace Haven Transport").font.size = Pt(9)
+
+                c2 = ttd.cell(0, 1).paragraphs[0]
+                c2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                c2.add_run("PIHAK KEDUA\n").bold = True
+                c2.add_run("\n\n\n\n").font.size = Pt(10)
+                c2.add_run(d['cn'].upper()).bold = True
+                c2.add_run(f"\nPemegang KTP NIK: {nik_cust}").font.size = Pt(9)
+
+                buffer = io.BytesIO()
+                doc.save(buffer)
+                buffer.seek(0)
+                return buffer.getvalue()
+
+            try:
+                docx_data = generate_word(kid, d, m_dp, m_cicilan, m_tenor, m_tempo, m_status, m_metode,
+                                          sched_1, cicilan_terakhir, nik_cust, tgl_lahir_cust, status_kawin_cust, tgl_cetak_str)
+                st.download_button(
+                    "📝 Download Word (.docx)",
+                    data=docx_data,
+                    file_name=f"Invoice_Perjanjian_{kid}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"❌ Gagal buat Word: {e}")
+        else:
+            st.info("ℹ️ Install `python-docx` untuk export Word: `pip install python-docx`")
 # ==================== 11. OVERDUE & DENDA ====================
 elif pilihan == "🚨 Overdue & Denda":
     st.markdown('<div class="main-header"><h1>🚨 Overdue & Denda</h1></div>', unsafe_allow_html=True)
