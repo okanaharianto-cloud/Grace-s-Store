@@ -7,6 +7,9 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import psycopg2
+import psycopg2.extras
+import urllib.parse
 import hashlib
 import os
 import shutil
@@ -100,17 +103,33 @@ def is_pakaian(kat):
     return kat in PAKAIAN_KATEGORI
 
 # ==================== PATH PERSISTEN ====================
+# ==================== PATH PERSISTEN ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Set env PERSIST_DIR di hosting (misal /data) agar tahan reset.
 PERSIST_DIR = os.getenv("PERSIST_DIR", BASE_DIR)
 os.makedirs(PERSIST_DIR, exist_ok=True)
 
-DB_PATH    = os.path.join(PERSIST_DIR, "toko_kredit.db")
+# File upload & backup tetap di folder lokal/bucket
 BACKUP_DIR = os.path.join(PERSIST_DIR, "backups")
 UPLOAD_DIR = os.path.join(PERSIST_DIR, "uploads")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# ==================== KONEKSI DATABASE POSTGRESQL ====================
+@st.cache_resource
+def get_connection():
+    # Ambil URL dari Secrets Hugging Face
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        st.error("❌ DATABASE_URL belum diatur di Secrets Hugging Face!")
+        st.stop()
+    
+    # Supabase membutuhkan format connection string yang benar
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = True
+    return conn
+
+conn = get_connection()
+c = conn.cursor()
 
 # ==================== ENKRIPSI FILE UPLOAD ====================
 FERNET_KEY = os.getenv("FERNET_KEY", "")
@@ -155,29 +174,29 @@ conn = get_connection()
 c = conn.cursor()
 
 # ==================== STRUKTUR DATABASE ====================
-c.execute('''CREATE TABLE IF NOT EXISTS produk (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
-c.execute('''CREATE TABLE IF NOT EXISTS transaksi_in (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS transaksi_cash (id INTEGER PRIMARY KEY AUTOINCREMENT, produk_id INTEGER, jumlah INTEGER, harga_jual_satuan REAL, total_harga REAL, uang_bayar REAL, kembalian REAL, laba REAL, tanggal TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS customer (id INTEGER PRIMARY KEY AUTOINCREMENT, nama TEXT, telepon TEXT, alamat TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS kredit (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, produk_id INTEGER, harga_cash REAL, dp REAL, pokok_hutang REAL, total_hutang REAL, tenor INTEGER, cicilan_bulan REAL, sisa_hutang REAL, jatuh_tempo TEXT, status TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS pembayaran (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, jumlah_bayar REAL, denda REAL, tanggal TEXT, keterangan TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
-c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
+# ==================== STRUKTUR DATABASE ====================
+# Perhatikan perubahan: INTEGER PRIMARY KEY AUTOINCREMENT -> SERIAL PRIMARY KEY
+c.execute('''CREATE TABLE IF NOT EXISTS produk (id SERIAL PRIMARY KEY, nama TEXT, kategori TEXT, harga_modal REAL, stok INTEGER)''')
+c.execute('''CREATE TABLE IF NOT EXISTS transaksi_in (id SERIAL PRIMARY KEY, produk_id INTEGER, jumlah INTEGER, tanggal TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS transaksi_cash (id SERIAL PRIMARY KEY, produk_id INTEGER, jumlah INTEGER, harga_jual_satuan REAL, total_harga REAL, uang_bayar REAL, kembalian REAL, laba REAL, tanggal TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS customer (id SERIAL PRIMARY KEY, nama TEXT, telepon TEXT, alamat TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS kredit (id SERIAL PRIMARY KEY, customer_id INTEGER, produk_id INTEGER, harga_cash REAL, dp REAL, pokok_hutang REAL, total_hutang REAL, tenor INTEGER, cicilan_bulan REAL, sisa_hutang REAL, jatuh_tempo TEXT, status TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS pembayaran (id SERIAL PRIMARY KEY, kredit_id INTEGER, jumlah_bayar REAL, denda REAL, tanggal TEXT, keterangan TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT UNIQUE, password TEXT, nama_lengkap TEXT, role TEXT, aktif INTEGER DEFAULT 1)''')
+c.execute('''CREATE TABLE IF NOT EXISTS log_aktivitas (id SERIAL PRIMARY KEY, username TEXT, aksi TEXT, detail TEXT, waktu TEXT)''')
 c.execute('''CREATE TABLE IF NOT EXISTS pengaturan (kunci TEXT PRIMARY KEY, nilai TEXT, keterangan TEXT)''')
-c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
-c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id INTEGER PRIMARY KEY AUTOINCREMENT, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS jadwal_kustom (id SERIAL PRIMARY KEY, kredit_id INTEGER, opsi TEXT, ke INTEGER, jatuh_tempo TEXT, angsuran REAL, sisa REAL)''')
+c.execute('''CREATE TABLE IF NOT EXISTS serah_terima (id SERIAL PRIMARY KEY, kredit_id INTEGER, imei TEXT, foto_bukti TEXT, tanggal_serah TEXT, penerima TEXT)''')
 
 # Tabel consent UU PDP
 c.execute('''CREATE TABLE IF NOT EXISTS consent (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     customer_id INTEGER,
     jenis TEXT,
     disetujui INTEGER,
     waktu TEXT,
     keterangan TEXT
 )''')
-conn.commit()
-
 # ==================== MIGRASI KOLOM ====================
 for sql in [
     "ALTER TABLE produk ADD COLUMN markup_persen REAL DEFAULT 5.0",
